@@ -1,0 +1,7 @@
+{
+    name: kaictl
+    type: module
+    version: "0.0.1"
+    description: "Convenience functions"
+    license: "MIT"
+}
