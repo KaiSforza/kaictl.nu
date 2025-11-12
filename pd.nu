@@ -58,7 +58,7 @@ def "pu info" [
     --force (-f)
 ]: nothing -> record {
     let path = $env.XDG_RUNTIME_DIR? | default $D_CACHE | path join "podmaninfo.db"
-    let host = ($path | dirname) | path join podman podman.sock
+    let host = ($path | path dirname) | path join podman podman.sock
     let hash = random uuid -v 5 -n url -s $host
     if (not $force) and ($path | path exists) and ($hash in (open $path | columns)) {
         open $path
