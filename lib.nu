@@ -76,3 +76,34 @@ export def "default or" [
     }
     return $_e
 }
+
+# Wrap a string using `table`'s wrapping width
+#
+# `table` keeps spaces if the break between the two lines has a single space.
+# Using a double space will keep the space there. Note, this means that the
+# following will work:
+# 
+#   `let s = "12345678 1234567"`
+#   `$s | str wrap 10 | lines | str join ' ' | $in == $s`
+#   ==> `true`
+#
+# but it will probably not work with multiple spaces.
+export def "str wrap" [
+    --unindent (-u) # Unindent the string 
+    width: int
+]: string -> string {
+    let in_text: string = $in
+    $env.config.table = {
+        trim: {methodology: "wrapping" wrapping_try_keep_words: true}
+        padding: {left: 0 right: 0}
+        mode: "none"
+    }
+
+    [$in_text]
+    | table -e --width $width --index=false
+    | ansi strip
+    | if $unindent {
+        str unindent
+    } else { do {||} }
+    | str replace --regex --all '(?m)^ ([^ ])' '$1'
+}
