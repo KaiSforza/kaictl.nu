@@ -84,7 +84,8 @@ def nu_complete_mounts [] {
 # filters out overlays and useless disks.
 @example "View disks" {sys df}
 export def "sys df" [
-    ...path: string@nu_complete_mounts
+    --precision (-p): int = 2 # Default precision to use for the filesizes
+    ...path: string@nu_complete_mounts #Show a specific mount only
 ]: nothing -> table {
     let pathfilter = if ($path | is-not-empty) {
         {|p| $p.mount in $path}
@@ -118,6 +119,10 @@ export def "sys df" [
         }
     }
     | move --after total used free pUse mount
+    | match $in {
+        [$x] => $x
+        $x => $x
+    }
 }
 
 # sys net but sorted

@@ -5,8 +5,6 @@
 
 use ./lib.nu *
 
-const SEARCH_PATH: path = "~/.cache/nix-s/nix-search.db"
-
 # Regenerate the search db
 export def 'nix s regen' [
     --all # Regenerate all flakes in `nix registry list`
@@ -55,7 +53,7 @@ export def 'nix s regen' [
 
 # Search in known nix flakes
 export def "nix s" [
-    --path (-p): path = $SEARCH_PATH
+    --path (-p): path = $CNF_DB
     --exact (-e) # use exact search
     --flake: string = "n" # Which flake to search against
     --all-flakes (-a) # Search in all flakes

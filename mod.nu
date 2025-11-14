@@ -24,4 +24,5 @@ export use ./op.nu *
 export use ./nix.nu *
 export use ./rbw.nu *
 
+export module ./command_not_found.nu
 export module ./help.nu
