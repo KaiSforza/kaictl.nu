@@ -1,4 +1,4 @@
-use ../env *
+use ../lib *
 
 # Declaring this here so it can be used more quickly in the `sort`
 const DSF = {

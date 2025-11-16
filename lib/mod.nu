@@ -4,6 +4,7 @@ export use std/log
 use ../env *
 export use ./cache.nu *
 export use ./sshkey.nu *
+export use ./consts.nu *
 
 
 export-env {
@@ -97,8 +98,4 @@ export def "str wrap" [
     [$in_text]
     | table -e --width $width --index=false
     | ansi strip
-    | if $unindent {
-        str unindent
-    } else { do {||} }
-    | str replace --regex --all '(?m)^ ([^ ])' '$1'
 }

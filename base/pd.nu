@@ -1,5 +1,4 @@
 use ../lib *
-use ../env *
 
 # Run docker/podman wrapped, or directly via the API if implemented below
 export def --wrapped main [

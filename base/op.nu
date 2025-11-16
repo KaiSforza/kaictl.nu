@@ -6,7 +6,6 @@
 # result in better output.
 
 use ../lib *
-use ../env *
 
 const D_CACHE_OP: path = $nu.cache-dir | path join "op" "cached_creds.age"
 const LPP = "op"

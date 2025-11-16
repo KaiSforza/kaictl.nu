@@ -4,7 +4,6 @@
 # outputs.
 
 use ../lib *
-use ../env *
 
 # Regenerate the search db
 export def 'nix s regen' [
@@ -232,7 +231,7 @@ export def "nix rebuild nodes" [
         log debug $"Running on ($node)..."
         let progfile = mktemp --tmpdir --suffix ".log"
         (
-            nixos-rebuild
+            ^nixos-rebuild
                 $action
                 --flake $"/etc/nixos#($node | split row '.' | first)"
                 --target-host $"($env.user)@($node)"
