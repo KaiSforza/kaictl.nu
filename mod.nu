@@ -2,7 +2,7 @@
 #
 # See `help <command>` for more info on each submodule.
 
-use ./lib.nu *
+use ./env *
 use std/log
 export-env {
     # Use a better log format
@@ -17,12 +17,4 @@ export-env {
     use std/log []
 }
 
-export use ./coreutils.nu *
-export use ./pd.nu *
-export use ./cache.nu *
-export use ./op.nu *
-export use ./nix.nu *
-export use ./rbw.nu *
-
-export module ./command_not_found.nu
-export module ./help.nu
+export use base *

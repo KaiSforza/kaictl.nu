@@ -1,4 +1,4 @@
-use ./lib.nu *
+use ./consts.nu *
 export def main [
     cmd: path
 ] {

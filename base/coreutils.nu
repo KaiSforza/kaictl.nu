@@ -1,4 +1,10 @@
-use ./lib.nu *
+# Not replacements, but improvements for some coreutils functions
+#
+# Includes better output for `ls`, `w`, `df` and more! I know most of these
+# aren't actually part of `coreutils`, but they are core utilities that could
+# use better output.
+
+use ../lib *
 
 # Order `ls` output more like what the normal `ls` output is.
 #
@@ -12,7 +18,6 @@ export def l [
     --directory (-D) # List the specified directory itself instead of the contents
     --mime-type (-m) # Show mime-types based on filenames
     --threads (-t) # Use multiple threads
-    # --octal (-o) # Show octal permissions
     ...pattern: oneof<glob, string> # The glob pattern to use
 ] {
     let r: oneof<glob, string> = if ($pattern | is-empty) {

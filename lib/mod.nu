@@ -1,8 +1,10 @@
 # Convnenience functions for Nushell
 
-export use ./env.nu *
-
 export use std/log
+use ../env *
+export use ./cache.nu *
+export use ./sshkey.nu *
+
 
 export-env {
     # Use a better log format

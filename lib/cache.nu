@@ -1,6 +1,6 @@
 # Cache reading and writing using age and SSH keys for encryption
 
-use ./lib.nu *
+use ../env *
 use ./sshkey.nu *
 
 # Read from a cache if it exists, or default to an empty record.

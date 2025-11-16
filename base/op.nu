@@ -1,11 +1,15 @@
-use ./lib.nu *
-use ./cache.nu *
-use ./sshkey.nu *
+# Modules to use for 1Password
+#
+# Overrides the `op` command to use credential caching even when the desktop
+# application is not running or available. Favors using the `OP_FORMAT=json`
+# mode for easier parsing by nu, so using `op ... | from json` will probably
+# result in better output.
+
+use ../lib *
+use ../env *
 
 const D_CACHE_OP: path = $nu.cache-dir | path join "op" "cached_creds.age"
 const LPP = "op"
-
-alias opbin = op
 
 def nu_complete_op_accounts [] {
     run-external (oppath) "account" "list" "--format" "json"
@@ -81,16 +85,11 @@ def oppath [ ]: nothing -> path {
         log debug $"($lp)op bin: ($op)"
         return $op
     } catch {
-        error arr -u ([
-        "No 1Password installation found!"
-        ""
-        "Make sure 1Password is installed and properly set up."
-        "See the `devshell/INSTALL.md` file for more information."
-        "If this issue persists after following all of the steps there,"
-        "please contact the devops team."
-        ])
+        error make -u {msg: "No 1Password installation found!"}
     }
 }
+
+alias "op signin" = signin
 
 # Signs into 1Password
 #
@@ -108,7 +107,7 @@ def oppath [ ]: nothing -> path {
 # and convenience to a point that is satisfactory. If the user's private SSH key
 # is not properly stored or secure, then this will allow other users on the
 # machine to access their credentials temporarily.
-export def "op signin" [
+export def "signin" [
     --verbose # Print stages to the screen
     --account: string # Override the account
     --save: path = $D_CACHE_OP # Where to save the cached credentials

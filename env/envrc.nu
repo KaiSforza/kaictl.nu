@@ -7,8 +7,7 @@
 # The `./.envrc.nu` file should output a nuon string that can be loaded as the
 # new environment.
 
-use ./lib.nu *
-use ./coreutils.nu *
+use ../lib *
 
 export-env {
   let envrc_config = {

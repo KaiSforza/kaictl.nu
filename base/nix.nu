@@ -3,7 +3,8 @@
 # Adds a few commands to `nix` so it can be used with some nushell types and
 # outputs.
 
-use ./lib.nu *
+use ../lib *
+use ../env *
 
 # Regenerate the search db
 export def 'nix s regen' [
