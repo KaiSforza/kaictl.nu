@@ -157,7 +157,10 @@ export def "nix profile wipe-all-history" [
 export def "nix builders" [
     --at-file: string # Show builders at this location
     --nushell (-n) # Nushell output
-]: any -> list<string> {
+]: [
+    nothing -> list<string>
+    nothing -> table
+] {
     let nixConfig = if ($at_file | is-empty) {
         nix config show --json
         | from json
@@ -199,13 +202,14 @@ def "from nixbuilder" []: string -> record {
     }
 }
 
+# TODO: Fix this to actually work lol
 def "to nixbuilder" []: record -> string {
     $in.values
     | each {default '-'}
     | str join ' '
 }
 
-def nu_complete_nodes []: any -> list<string> {
+def "nu-complete nodes" []: any -> list<string> {
     nix flake show /etc/nixos --json
     | complete
     | get stdout
@@ -222,7 +226,7 @@ export def "nix rebuild nodes" [
     --builders: list<string>@"nix builders" = [] # Which builder to use
     --action (-a): string@[ "switch" "boot" "test" "build" ] = "test" # What `nixos-rebuild` action to run
     --verbose (-v) # Be verbose
-    ...nodes: string@nu_complete_nodes
+    ...nodes: string@"nu-complete nodes"
 ]: nothing -> table {
     $env.NU_LOG_LEVEL = if $verbose { "debug" } else { null }
     log debug $"nixos-rebuild nodes|running `nixos-rebuild ($action)` on ($nodes | str join ' ')"
@@ -236,8 +240,8 @@ export def "nix rebuild nodes" [
                 --flake $"/etc/nixos#($node | split row '.' | first)"
                 --target-host $"($env.user)@($node)"
                 --sudo
-                (optionals $builders [--builders ($builders | str join ',')])
-                (optionals $verbose [--verbose])
+                ...(optionals $builders [--builders ($builders | str join ',')])
+                ...(optionals $verbose [--verbose])
         ) o+e>| save --progress --append $progfile
         let out = open --raw $progfile | lines
         rm $progfile

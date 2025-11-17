@@ -1,4 +1,3 @@
-use ../lib *
 use std/log
 
 export use ./coreutils.nu *

@@ -4,7 +4,8 @@
 # aren't actually part of `coreutils`, but they are core utilities that could
 # use better output.
 
-use ../lib *
+# Ordered `ls` output
+export alias ll = l
 
 # Order `ls` output more like what the normal `ls` output is.
 #
@@ -41,16 +42,14 @@ export def l [
     } else {
         do {||
             select --optional ...(
-                [ mode user group size modified name] ++ (
-                    optionals ($in | is-not-empty target) [target]
-                )
+                [
+                    mode user group size modified name
+                    ...(if ($in | is-not-empty target) {[target]})
+                ]
             )
         }
     }
 }
-
-# Ordered `ls` output
-export alias ll = l
 
 # A `^watch` alternative.
 export def retry [

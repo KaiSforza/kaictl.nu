@@ -248,7 +248,8 @@ def build-module-page [module: record] {
         )"
     ]}
 
-    let cmdinfo = scope commands | where name in $module.commands.name
+    let allcmds = scope commands
+    let cmdinfo = $allcmds | where name in $module.commands.name
 
     let commands = if ($module.commands? | is-not-empty) {[
         (build-help-header "Exported commands")
@@ -256,9 +257,11 @@ def build-module-page [module: record] {
             $module.commands | each {|command|
                 {
                     n: $'(ansi cb)($command.name)(ansi rst)'
-                    d: ($cmdinfo | where name == $command.name).description
+                    d: (
+                        $allcmds
+                        | where decl_id == $command.decl_id
+                    ).0?.description?
                 }
-                # $'($indent)(ansi cb)($command.name)(ansi rst)' #' (char lparen)($module.name) ($command.name)(char rparen)'
             }
             | noheader
         )"
