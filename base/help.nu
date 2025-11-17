@@ -161,12 +161,12 @@ def "nu-complete list-commands" [] {
 
 def "nu-complete main-help" [] {
     [
-        { value: "commands", description: "Show help on Nushell commands." }
-        { value: "aliases", description: "Show help on Nushell aliases." }
-        { value: "modules", description: "Show help on Nushell modules." }
-        { value: "externs", description: "Show help on Nushell externs." }
-        { value: "operators", description: "Show help on Nushell operators." }
-        { value: "escapes", description: "Show help on Nushell string escapes." }
+        # { value: "commands", description: "Show help on Nushell commands." }
+        # { value: "aliases", description: "Show help on Nushell aliases." }
+        # { value: "modules", description: "Show help on Nushell modules." }
+        # { value: "externs", description: "Show help on Nushell externs." }
+        # { value: "operators", description: "Show help on Nushell operators." }
+        # { value: "escapes", description: "Show help on Nushell string escapes." }
     ]
     | append (nu-complete list-commands)
 }

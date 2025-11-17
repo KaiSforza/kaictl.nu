@@ -8,3 +8,4 @@ export use ./rbw.nu *
 
 # Separated as modules
 export module ./op.nu
+export module ./help.nu
