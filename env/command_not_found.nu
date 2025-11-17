@@ -1,4 +1,5 @@
-use ./consts.nu *
+use ../lib/consts.nu *
+
 export def main [
     cmd: path
 ] {
@@ -26,6 +27,7 @@ export def main [
         }
     }
 }
+
 export-env {
     $env.cnf.maxpkgs = $env.cnf?.maxpkgs? | default 3
     $env.cnf.registry = $env.cnf?.registry? | default "nixpkgs"
