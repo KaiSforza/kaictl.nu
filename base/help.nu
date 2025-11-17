@@ -14,11 +14,14 @@ def linewrap [
 # Returns a string that's an 80 char wide table for things like subcommands
 #
 # Does some easy line-wrapping for the strings
-export def noheader [
+def details [
     --width: int = 90 # Default width for the table
-    --something-long (-s): record<foo: string bar: string> # foobar this is a long one okay wow
-]: table -> string {
+]: [
+    table -> string
+    record -> string
+] {
     let intable = $in
+    let type = $intable | describe --no-collect | split words | first
     $env.config.color_config.leading_trailing_space_bg = {}
 
     # let maxwidths = $intable | values | each {
@@ -37,7 +40,7 @@ export def noheader [
     | table --index=false -e --theme none --width=$width
     | lines
     | each {|line| $"($indent)($line | str replace -r '^ ' '')"}
-    | skip
+    | skip (if $type == "table" {1} else {0})
     | str join (char newline)
 # }
 }
@@ -64,7 +67,7 @@ def error-fmt [] {
 
 def throw-error [error: string, msg: string, span: record] {
     error make {
-        msg: ($error | error-fmt)
+        msg: $error
         label: {
             text: $msg
             span: $span
@@ -73,23 +76,23 @@ def throw-error [error: string, msg: string, span: record] {
 }
 
 def module-not-found-error [span: record] {
-    throw-error "std::help::module_not_found" "module not found" $span
+    throw-error "Module not found" "module not found" $span
 }
 
 def alias-not-found-error [span: record] {
-    throw-error "std::help::alias_not_found" "alias not found" $span
+    throw-error "Alias not found" "alias not found" $span
 }
 
 def extern-not-found-error [span: record] {
-    throw-error "std::help::extern_not_found" "extern not found" $span
+    throw-error "Extern not found" "extern not found" $span
 }
 
 def operator-not-found-error [span: record] {
-    throw-error "std::help::operator_not_found" "operator not found" $span
+    throw-error "Operator not found" "operator not found" $span
 }
 
 def command-not-found-error [span: record] {
-    throw-error "std::help::command_not_found" "command not found" $span
+    throw-error "Command not found" "command not found" $span
 }
 
 # Manually set list of operators
@@ -243,7 +246,7 @@ def build-module-page [module: record] {
                 }
                 # $'($indent)(ansi cb)($submodule.name)(ansi rst) (char lparen)($module.name) ($submodule.name)(char rparen) - ($submodule.description)'
             }
-            | noheader
+            | details
             # | str join (char newline)
         )"
     ]}
@@ -263,7 +266,7 @@ def build-module-page [module: record] {
                     ).0?.description?
                 }
             }
-            | noheader
+            | details
         )"
     ]}
 
@@ -517,13 +520,24 @@ def build-command-page [command: record]: nothing -> any {
         ]
     }
 
-    let subcommands = (scope commands | where name =~ $"^($command.name) " | select name description)
+    let subcommands = (
+        scope commands
+        | where name =~ $"^($command.name) "
+    )
     let subcommands = if ($subcommands | is-not-empty) {[
         (build-help-header "Subcommands")
         ($subcommands
+            | upsert description {|c|
+                if ($c.type == custom) {
+                    $"(ansi g)\(($c.type)\)(ansi rst) ($c.description)"
+                } else {
+                    $c.description
+                }
+            }
             | select name description
             | upsert name {|sc| $"(ansi teal)($sc.name)(ansi rst)"}
-            | noheader
+            | transpose -rd
+            | details
         )
         # ($subcommands | each {|subcommand |
         #     $"($indent)(ansi teal)($subcommand.name)(ansi reset) - ($subcommand.description)"
@@ -581,7 +595,7 @@ def build-command-page [command: record]: nothing -> any {
                         })
                     ] | str join "")
                 }
-            } | noheader)
+            } | details)
         ]}
 
 
@@ -683,7 +697,8 @@ def build-command-page [command: record]: nothing -> any {
     | sections join
 }
 
-def scope-commands [
+# Show help on commands.
+export def commands [
     ...command: string@"nu-complete list-commands" # the name of command to get help on
     --find (-f): string # string to find in command names and description
 ] {
@@ -719,18 +734,6 @@ def external-commands [
     }
 }
 
-# Show help on commands.
-export def commands [
-    ...command: string@"nu-complete list-commands" # the name of command to get help on
-    --find (-f): string # string to find in command names and description
-]: nothing -> any {
-    try {
-        scope-commands ...$command --find=$find
-    } catch {
-        external-commands ...$command
-    }
-}
-
 # Display help information about different parts of Nushell.
 #
 # Welcome to Nushell!
@@ -759,7 +762,10 @@ export def commands [
 export def main [
     ...item: string@"nu-complete main-help" # the name of the help item to get help on
     --find (-f): string # string to find in help items names and description
-]: nothing -> string {
+]: [
+    nothing -> string
+    nothing -> table
+] {
     if ($item | is-empty) and ($find | is-empty) {
         print (main help)
         return
@@ -776,15 +782,16 @@ export def main [
     let modules = try { modules $target_item --find $find }
     if ($modules | is-not-empty) { return $modules }
 
-    let pipe_redir = try { pipe-and-redirect $target_item --find $find }
-    if ($pipe_redir | is-not-empty) { return $pipe_redir}
-
     if ($find | is-not-empty) {
-        print -e $"No help results found mentioning: ($find)"
         return []
+    } else {
+        (
+            throw-error
+            "Not found"
+            "did not find anything under this name"
+            (metadata $item).span
+        )
     }
-    # use external tool (e.g: `man`) to search help for $target_item
-    # the stdout and stderr of external tool will follow `main` call.
-    external-commands $target_item
+
 }
 
