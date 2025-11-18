@@ -4,9 +4,6 @@
 # aren't actually part of `coreutils`, but they are core utilities that could
 # use better output.
 
-# Ordered `ls` output
-export alias ll = l
-
 # Order `ls` output more like what the normal `ls` output is.
 #
 # Re-orders the output to normally be `mode user group size mod name (target)`
@@ -50,6 +47,9 @@ export def l [
         }
     }
 }
+
+# Ordered `ls` output
+export alias ll = l
 
 # A `^watch` alternative.
 export def retry [
