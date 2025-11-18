@@ -24,18 +24,6 @@ def details [
     let type = $intable | describe --no-collect | split words | first
     $env.config.color_config.leading_trailing_space_bg = {}
 
-    # let maxwidths = $intable | values | each {
-    #     str join (char newline) | lines | str length | math max
-    # }
-
-    # print ($intable | values | each {str join (char newline)} | table -e)
-    # print $maxwidths
-
-    # $intable
-    # | each {|t|
-    #     $t
-    #     | items {}
-    # }
     $intable
     | table --index=false -e --theme none --width=$width
     | lines
@@ -569,7 +557,7 @@ def build-command-page [command: record]: nothing -> any {
                             if ($flag.short_flag | is-not-empty) {
                             [
                                 ","
-                                (if (($flag.parameter_name | str length) > 5) {
+                                (if (($flag.parameter_name | str length) > 10) {
                                     $"(char newline)($indent)"
                                 } else {" "})
                                 $"-(ansi teal)($flag.short_flag)(ansi reset)"
@@ -762,6 +750,7 @@ def external-commands [
 export def main [
     ...item: string@"nu-complete main-help" # the name of the help item to get help on
     --find (-f): string # string to find in help items names and description
+    --example (-e) # Show examples in more detail (TODO)
 ]: [
     nothing -> string
     nothing -> table
@@ -773,7 +762,7 @@ export def main [
 
     let target_item = ($item | str join " ")
 
-    let commands = try { scope-commands $target_item --find $find }
+    let commands = try { commands $target_item --find $find }
     if ($commands | is-not-empty) { return $commands }
 
     let aliases = try { aliases $target_item --find $find }
