@@ -320,3 +320,31 @@ export def "nix create-index" [
     )
 }
 
+# Restart the nix-daemon
+#
+# This seems to get stuck sometimes with the current version, just adding this
+# to help get things running again.
+export def "nix daemon restart" [
+    --dry-run (-n) # Don't actually restart, just check what's running
+] {
+    let nix_daemons = ps | where name =~ nix-daemon
+    if $dry_run {
+        return $nix_daemons
+    }
+    (
+        sudo systemctl stop
+        nix-daemon.socket
+        determinate-nixd.socket
+    )
+    sudo systemctl stop nix-daemon.service
+    ps | where name =~ nix-daemon
+    | match $in {
+        [] => ()
+        $p => (sudo kill --signal 9 ...($p.pid))
+    }
+    sudo systemctl start nix-daemon.socket determinate-nixd.socket
+    return {
+        before: $nix_daemons
+        after: (ps | where name =~ nix-daemon)
+    }
+}
