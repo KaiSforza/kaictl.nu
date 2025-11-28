@@ -180,13 +180,11 @@ def build-help-header [
 }
 
 # Highlight (and italicize) code in backticks, fallback to dimmed for invalid syntax
-def nu-highlight-desc [
+def "nu-highlight desc" [
     --fallback: string = (ansi d)
 ] {
     if (config use-colors) {
-        str replace -ar '(?<!`)`([^`]+)`(?!`)' {||
-            let s = $in
-            | str trim -c '`'
+        str replace -ar '(?<!`)`([^`]+)`(?!`)' {|s|
             $s
             | try {
                 nu-highlight --reject-garbage
@@ -216,12 +214,14 @@ def build-module-page [module: record] {
     ]
 
     let description = if ($module.description? | is-not-empty) {[
-        ($module.description | nu-highlight-desc)
+        ($module.description | nu-highlight desc)
     ]}
 
-    let extra_description = if ($module.extra_description? | is-not-empty) {[
-        ($module.extra_description | nu-highlight-desc)
-    ]}
+    let extra_description = if ($module.extra_description? | is-not-empty) {
+        [
+            ($module.extra_description | nu-highlight desc)
+        ]
+    }
 
     let submodules = if ($module.submodules? | is-not-empty) {[
         (build-help-header "Submodules")
@@ -286,6 +286,9 @@ def build-module-page [module: record] {
 export def modules [
     ...module: string@"nu-complete list-modules" # the name of module to get help on
     --find (-f): string # string to find in module names
+    --example (-e) # Show examples in more detail (TODO)
+    --short (-s) # Show a short version of the help
+    --all (-a) # Show all elements
 ]: nothing -> any {
     let modules = (scope modules)
 
@@ -304,14 +307,14 @@ export def modules [
     }
 }
 
-def build-alias-page [alias: record]: nothing -> string {
+def build-alias-page [alias: record opts: record]: nothing -> string {
     let ad = $alias.description? | default ""
     let description = if (
         $ad | is-not-empty
     ) or not (
         $ad != $"Alias for `($alias.expansion)`"
     ) {[
-        ($alias.description | nu-highlight-desc)
+        ($alias.description | nu-highlight desc)
     ]}
 
     let aname = [
@@ -339,6 +342,9 @@ def build-alias-page [alias: record]: nothing -> string {
 export def aliases [
     ...alias: string@"nu-complete list-aliases" # the name of alias to get help on
     --find (-f): string # string to find in alias names
+    --example (-e) # Show examples in more detail (TODO)
+    --short (-s) # Show a short version of the help
+    --all (-a) # Show all elements
 ]: nothing -> any {
     let aliases = (scope aliases | sort-by name)
 
@@ -351,7 +357,11 @@ export def aliases [
             alias-not-found-error (metadata $alias | get span)
         }
 
-        build-alias-page ($found_alias | get 0)
+        build-alias-page ($found_alias | get 0) {
+            short: $short
+            example: $example
+            all: $all
+        }
     } else {
         $aliases
     }
@@ -456,19 +466,21 @@ def get-command-extensions [command: string] {
         | get $command
         | do $in
         | each { lines | each { $"($indent)($in)" } | str join (char newline) }
-        | nu-highlight-desc
+        | nu-highlight desc
     } else {
         []
     }
 }
 
-def build-command-page [command: record]: nothing -> any {
+def build-command-page [command: record opts: record = {}]: nothing -> any {
     let description = if ($command.description? | is-not-empty) {[
-        ($command.description | nu-highlight-desc)
+        ($command.description | nu-highlight desc)
     ]}
-    let extra_description = if ($command.extra_description? | is-not-empty) {[
-        ($command.extra_description | nu-highlight-desc)
-    ]}
+    let extra_description = if ($command.extra_description? | is-not-empty) {
+        [
+            ($command.extra_description | nu-highlight desc)
+        ]
+    }
 
     let search_terms = if ($command.search_terms? | is-not-empty) {[
         $"(build-help-header 'Search terms') ($command.search_terms)"
@@ -504,7 +516,7 @@ def build-command-page [command: record]: nothing -> any {
             | compact
             | flatten
             | str join ""
-            | nu-highlight-desc --fallback (ansi c))
+            | nu-highlight desc --fallback (ansi c))
         ]
     }
 
@@ -575,7 +587,8 @@ def build-command-page [command: record]: nothing -> any {
                         }),
                     ] | compact | flatten | str join '')
                     d: ([(if ($flag.description | is-not-empty) {
-                            $"($flag.description)"
+                            let desc = $flag.description | nu-highlight desc
+                            $"($desc)"
                         }),
                         (if ($flag.parameter_default | is-not-empty) {
                             $"\n\(default: ($flag.parameter_default
@@ -597,7 +610,7 @@ def build-command-page [command: record]: nothing -> any {
                     ...[(if $input.syntax_shape != nothing {
                         $"($input.syntax_shape | format type) | "
                     })]
-                    $"($'`($command.name)`' | nu-highlight-desc --fallback (ansi cb))"
+                    $"($'`($command.name)`' | nu-highlight desc --fallback (ansi cb))"
                     $" -> ($output.syntax_shape | format type)"
                 ] | str join ""
             })
@@ -671,24 +684,61 @@ def build-command-page [command: record]: nothing -> any {
         ] | compact | str join (char newline)})
     ] | flatten}
 
-    [
-        $description
-        $extra_description
-        $search_terms
-        $category
-        $cli_usage
-        $subcommands
-        $rest
-        $extensions
-        $examples
-    ]
+    match $opts {
+        {short: true} => [$description],
+        {all: true} => [
+            $description
+            $extra_description
+            $search_terms
+            $category
+            $cli_usage
+            $subcommands
+            $rest
+            $extensions
+            $examples
+        ]
+        {example: true} => [
+            $description
+            $examples
+        ]
+        _ => [
+            $description
+            $extra_description
+            $cli_usage
+            $subcommands
+            $rest
+            $extensions
+        ]
+    }
+    | compact
     | sections join
+    # [
+    #     $description
+    # ]
+    # | if $opts.short? != true {
+    #     $in ++ [
+    #         $extra_description
+    #         $search_terms
+    #         $category
+    #         $cli_usage
+    #         $subcommands
+    #         $rest
+    #         $extensions
+    #         $examples
+    #     ]
+    # } else {
+    #     $in
+    # }
+    # | sections join
 }
 
 # Show help on commands.
 export def commands [
     ...command: string@"nu-complete list-commands" # the name of command to get help on
     --find (-f): string # string to find in command names and description
+    --example (-e) # Show examples in more detail (TODO)
+    --short (-s) # Show a short version of the help
+    --all (-a) # Show all elements
 ] {
     let commands = (scope commands | sort-by name)
 
@@ -702,7 +752,12 @@ export def commands [
         if ($found_command | is-empty) {
             command-not-found-error (metadata $command | get span)
         } else {
-            build-command-page ($found_command | get 0)
+            build-command-page ($found_command | get 0) {
+                find: $find
+                example: $example
+                short: $short
+                all: $all
+            }
         }
     } else {
         $commands | select name category description signatures search_terms
@@ -728,10 +783,10 @@ def external-commands [
 #
 # `help word` searches for "word" in commands, aliases and modules, in that order.
 # If not found as internal to nushell, you can set `$env.NU_HELPER` to a program
-# (default: man) and "word" will be passed as the first argument.
-# Alternatively, you can set `$env.NU_HELPER` to `--help` and it will run "word" as
-# an external and pass `--help` as the last argument (this could cause unintended
-# behaviour if it doesn't support the flag, use it carefully).
+# (default: man) and "word" will be passed as the first argument. Alternatively,
+# you can set `$env.NU_HELPER` to `--help` and it will run "word" as an external
+# and pass `--help` as the last argument (this could cause unintended behaviour if
+# it doesn't support the flag, use it carefully).
 #
 # Here are some tips to help you get started.
 #   * `help -h` or `help help` - show available `help` subcommands and examples
@@ -751,6 +806,8 @@ export def main [
     ...item: string@"nu-complete main-help" # the name of the help item to get help on
     --find (-f): string # string to find in help items names and description
     --example (-e) # Show examples in more detail (TODO)
+    --short (-s) # Show a short version of the help
+    --all (-a) # Show all elements
 ]: [
     nothing -> string
     nothing -> table
@@ -762,13 +819,13 @@ export def main [
 
     let target_item = ($item | str join " ")
 
-    let commands = try { commands $target_item --find $find }
+    let commands = try { commands $target_item --find $find --all=$all --short=$short --example=$example }
     if ($commands | is-not-empty) { return $commands }
 
-    let aliases = try { aliases $target_item --find $find }
+    let aliases = try { aliases $target_item --find $find --all=$all --short=$short --example=$example }
     if ($aliases | is-not-empty) { return $aliases }
 
-    let modules = try { modules $target_item --find $find }
+    let modules = try { modules $target_item --find $find --all=$all --short=$short --example=$example }
     if ($modules | is-not-empty) { return $modules }
 
     if ($find | is-not-empty) {
