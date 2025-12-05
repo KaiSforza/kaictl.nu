@@ -1,35 +1,118 @@
-const nix_db = [$nu.cache-dir "nix-index-not-found"] | path join | path expand
-const pacman_db = [$nu.cache-dir "pacman-not-found.db"] | path join | path expand
+const nix_db_: path = [$nu.cache-dir "nix-not-found"] | path join
+const nix_db: path = [$nu.cache-dir "nix-not-found.db"] | path join
+const pacman_db: path = [$nu.cache-dir "pacman-not-found.db"] | path join
+const DB: path = $nu.cache-dir | path join "command-not-found.db"
+
+use std/log
+
+# Locate a binary
+@example "find a package" {cmd locate nix ls} --result [
+    uutils-coreutils-noprefix
+    busybox
+    toybox
+    coreutils
+    ...
+]
+export def "cmd locate" [
+    manager: string@[pacman nix]
+    cmd_name: string
+    --verbose
+    --db: path = $DB
+]: [
+    nothing -> list<string>
+    nothing -> table
+] {
+    if not ($db | path exists) {
+        error make {
+            msg: $"Command `($cmd_name)` not found"
+            labels: [
+                {text: "" span: (metadata $cmd_name).span}
+                {text: $"File not found: ($db)" span: (metadata $db).span}
+            ]
+            help: $"Please use `($manager) create-index ($db)` to build the index"
+        }
+    }
+    let manager = match $manager {
+        nix => "nixpkgs"
+        pacman => "pacman"
+        _ => {error make {msg: "invalid manager"}}
+    }
+    let pkgs = open $db
+    | (
+        query db --params [$'bin/($cmd_name)' $'usr/bin/($cmd_name)'] # already have all binaries, just need last item
+        $"select * from ($manager) where files = ? or files = ?"
+    )
+    if $verbose {
+        $pkgs
+    } else {
+        $pkgs
+        | get package
+    }
+}
+
+
 
 # Creates the nix-locate database
 #
 # Makes a very quickly queriable database that only stores the binaries.
+@example "Create the initial index" {nix create-index}
+@example "Create the initial index at a specific location" {nix create-index /tmp/db/}
 export def "nix create-index" [
     db: path = $nix_db
 ]: nothing -> nothing {
     log info "Updating the file data..."
-    mkdir $db
     let backup_db = $"($db).(date now | format date '%J%Q')"
     if ($db | path exists) {
         log info $"Backing up current db to ($backup_db)"
-        mv -v $db $backup_db
-        mkdir $db
+        mv $db $backup_db
     }
     try {
-        cd $db
-        (
-            nix-index
-            --db $db
-            -c 3
-            --filter-prefix '/bin/'
-        )
+        if ($nix_db_ | path join "files" | path exists) {
+            log info "Already have a database, using that."
+        } else {
+            (
+                nix-index
+                --db $nix_db_
+                -f https://github.com/NixOS/nixpkgs/archive/refs/heads/nixos-unstable.tar.gz
+                -c 3
+                --filter-prefix '/bin/'
+            )
+        }
+        log info "Locating all files in the nix-index files database"
+        nix-locate --db $nix_db_ --regex '' --all --type x --type s --no-group
+        | from ssv --noheaders --minimum-spaces 1
+        | rename package size type path
+        | each {|p|
+          if $p.package !~ '\(.+\)' {
+            let path_parts = $p.path | path split
+            let store = $path_parts | take 3 | path join
+            let hash_ver = $path_parts.3 | split row '-' --number 2
+            let hash = $hash_ver.0
+            let ver = $hash_ver.1
+            let file = $path_parts | skip 4 | path join
+            {
+              repo: "nixpkgs"
+              package: ($p.package | split row '.' | drop | str join '.')
+              version: $ver
+              files: $file
+              hash: $hash
+            }
+          }
+        }
+        | into sqlite $db --table-name "nixpkgs"
+
+        log debug "Optimizing table."
+        open $db
+        | query db "CREATE INDEX idx_nixpkgs
+            ON nixpkgs(files);"
+
     } catch {|e|
         if ($backup_db | path exists) {
             log error $"Restoring database..."
-            mv -v $backup_db $db
+            mv $backup_db $db
         }
         error make {
-            msg: "Failed to update the file info"
+            msg: "Failed to update the file info for nixpkgs"
             # inner: [$e] # TODO: add this as a proper inner error
             inner: [($e.json | from json)]
             labels: [
@@ -41,38 +124,18 @@ export def "nix create-index" [
 
 # Find a nix package
 #
-# Uses the small version of the database created by `nix create-index`
+# Uses the small version of the database created by `nix create-index`. The
+# ordering of the results is not guaranteed.
+@example "find a package" {nix locate ls} --result [
+    uutils-coreutils-noprefix
+    busybox
+    ...
+]
 export def "nix locate" [
     cmd_name: string # command name to search for
-] {
-    if not ($nix_db | path exists) {
-        if $env.cnf.auto {
-            nix create-index
-        } else {
-            error make {
-                msg: $"Command `($cmd_name)` not found"
-                labels: [
-                    {text: "" span: (metadata $cmd_name).span}
-                    {text: $"Directory not found: ($nix_db)" span: (metadata $nix_db).span}
-                ]
-                help: "Please use `nix create-index` to build the index"
-            }
-        }
-    }
-    (
-        ^nix-locate
-        "--db" $nix_db
-        "--minimal"
-        "--no-group"
-        "--type" "x" "--type" "s"
-        "--whole-name"
-        "--at-root"
-        $"/bin/($cmd_name)"
-    )
-    | lines
-    | where {|s| $s !~ '\..*\.'}
-    | parse '{p}.{_}'
-    | get p
+    --db: directory = $nix_db # directory of the database to use
+]: nothing -> list<string> {
+    cmd locate nix $cmd_name --db $db
 }
 
 # Create an index of pacman packages
@@ -80,33 +143,37 @@ export def "nix locate" [
 # Saves pacman packages to an sqlite database for easy, fast queries. Squashes
 # it a little bit by grouping things by repo/package/version. Only stores the
 # binary paths, using this both core and extra it's only about 0.75mb.
+@example "Create the initial index" {pacman create-index}
+@example "Create the initial index at a specific location" {pacman create-index /tmp/db}
 export def "pacman create-index" [
-    db: path = $pacman_db
+    db: path = $pacman_db # file to use as the pacman database
 ]: nothing -> nothing {
     log info "Updating the pacman file data..."
-    mkdir ($db | path dirname)
     let backup_db = $"($db).(date now | format date '%J%Q')"
     if ($db | path exists) {
         log info $"Backing up current db to ($backup_db)"
-        mv -v $db $backup_db
+        mv $db $backup_db
     }
+    mkdir ($db | path dirname)
     try {
-        let tmpfiles = mktemp -d
+        let tmpfiles = mktemp -t -d
         log info "^pamcan --files --refresh"
         ^pamcan --files --refresh --dbpath $tmpfiles --logfile /dev/null --root $tmpfiles
         log info "Getting all files in common executable file locations"
         ^pacman -Fx '^(|usr)/s?bin/.+' --machinereadable
         | lines
         | split column (char nul) repo package version file
-        | group-by repo package version --to-table
-        | rename --column {items: files}
-        | upsert files {|i| $i.items.file? | default []}
         | into sqlite $db -t pacman
         log info $"Saved to sqlite database ($db)"
+
+        log debug "Optimizing table."
+        open $db
+        | query db "CREATE INDEX idx_pacman
+            ON pacman(files);"
     } catch {|e|
         if ($backup_db | path exists) {
             log error $"Restoring database..."
-            mv -v $backup_db $db
+            mv $backup_db $db
         }
         error make {
             msg: "Failed to update the file info"
@@ -123,34 +190,23 @@ export def "pacman create-index" [
 #
 # Backed by an sqlite database so that each `.files` file doesn't need to be
 # extracted and then searched.
+@example "find a package" {pacman locate ls} --result [ coreutils ]
 export def "pacman locate" [
     cmd_name: string # command name to search for
-] {
-    if not ($pacman_db | path exists) {
-        if $env.cnf.auto {
-            pacman create-index
-        } else {
-            error make {
-                msg: $"Command `($cmd_name)` not found"
-                labels: [
-                    {text: "" span: (metadata $cmd_name).span}
-                    {text: $"File not found: ($pacman_db)" span: (metadata $pacman_db).span}
-                ]
-                help: "Please use `pacman create-index` to build the index"
-            }
-        }
-    }
-    open $pacman_db
-    | (
-        query db --params [$'%/($cmd_name)"%'] # already have all binaries, just need last item
-        "select package from pacman where files like ? "
-    )
-    | get package
+    --db: path = $pacman_db # location of the database
+]: nothing -> list<string> {
+    cmd locate pacman $cmd_name --db $db
 }
 
-export def main [
+# Find command in package managers that are installed on the system
+@example "find a package" {provided-by ls} --result [
+    "nix profile add nixpkgs#_9base",
+    "pacman -S coreutils"
+    ...
+]
+export def provided-by [
     cmd_name: string # command to search for
-] {
+]: nothing -> list<string> {
     # find all the known checkers
     let checkers: list<string> = which -a ...[
         nix-locate
@@ -194,50 +250,56 @@ export def main [
     | get item
 }
 
+export def "main" [
+    cmd_name: string
+    --span (-s): record<start: int, end: int>
+]: nothing -> error {
+    let span = $span | default (metadata $cmd_name | get span)
+    if ($cmd_name | str contains '/') {
+        error make {
+            code: "nu::shell::cmd_file"
+            msg: (
+                if ($cmd_name | path exists) {"Path is not runnable."
+                } else {"File doesn't exist."}
+            )
+            labels: [
+                {text: "" span: $span}
+            ]
+        }
+    }
+    error make {
+        code: "nu::shell::cmd_not_found"
+        msg: $"Command `($cmd_name)` not found"
+        labels: [
+            {text: "" span: $span}
+        ]
+        help: (
+            match (provided-by $cmd_name) {
+                [] => null
+                $pkgs => {
+                    let has_extras = if ($pkgs | length) > ($env.cnf.maxpkgs) { ["  ..."] }
+                    [
+                        $"The program is currently not installed. Use one of the following:"
+                        ...(
+                            $pkgs
+                            | first $env.cnf.maxpkgs
+                            | each {|pkg| $"  ($pkg)"}
+                        )
+                        ...($has_extras)
+                    ] | str join "\n"
+                }
+            }
+        )
+    }
+}
+
 export-env {
     $env.cnf.maxpkgs = $env.cnf?.maxpkgs? | default 3
-    $env.cnf.auto = true
+    $env.cnf.auto = false
     $env.cnf.registry = $env.cnf?.registry? | default "nixpkgs"
-    let cnf = {|pkgs|
-        let has_extras = if ($pkgs | length) > ($env.cnf.maxpkgs) {
-            ["  ..."]
-        }
-        [
-            $"The program is currently not installed. Use one of the following:"
-            ...(
-                $pkgs
-                | first $env.cnf.maxpkgs
-                | each {|pkg| $"  ($pkg)"}
-            )
-            ...($has_extras)
-        ] | str join "\n"
-    }
-    $env.config.hooks.command_not_found = { |cmd_name|
-        if ($cmd_name | str contains '/') {
-            error make {
-                code: "nu::shell::cmd_file"
-                msg: (
-                    if ($cmd_name | path exists) {"Path is not runnable."
-                    } else {"File doesn't exist."}
-                )
-                labels: [
-                    {text: "" span: (metadata $cmd_name).span}
-                ]
-            }
-        }
-        error make {
-            code: "nu::shell::cmd_not_found"
-            msg: $"Command `($cmd_name)` not found"
-            labels: [
-                {text: "" span: (metadata $cmd_name).span}
-            ]
-            help: (
-                match (main $cmd_name) {
-                    [] => null
-                    $x => (do $cnf $x)
-                }
-            )
-        }
+    $env.config.hooks.command_not_found = {|cmd_name|
+        let span: record = metadata $cmd_name | get span
+        main $cmd_name --span $span
     }
 }
 
