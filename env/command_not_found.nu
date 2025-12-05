@@ -47,7 +47,7 @@ export def "nix locate" [
 ] {
     if not ($nix_db | path exists) {
         if $env.cnf.auto {
-            pacman create-index
+            nix create-index
         } else {
             error make {
                 msg: $"Command `($cmd_name)` not found"
