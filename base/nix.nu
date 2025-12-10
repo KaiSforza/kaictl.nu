@@ -292,33 +292,33 @@ export def "nix copy drv" [
 # The compression level doesn't really matter and the size benefits are minimal
 # but 3 is a 'normal' compression, not 22. The main part is the `--filter-prefix`
 # to get rid of the non '/bin/' paths.
-export def "nix create-index" [
-    --flake (-f): string = "flake:nixpkgs" # Flake to use
-    --system (-s): string # Choose a specific system
-    --compression (-c): int = 3 # Compression level for zstd
-    --path-cache (-p) # Use the path cache at `~/.cache/nix-index-not-found`
-] {
-    let db_loc = $env.HOME | path join ".cache" "nix-index-not-found"
-    let real_system = if ($system | is-not-empty) {
-        $system
-    } else {
-        nix config show --json
-        | from json
-        | get system.value
-    }
-    # Annoyingly the `--path-cache` doesn't have a location...just in the local
-    # directory.
-    mkdir $db_loc
-    cd $db_loc
-    (
-        nix-index
-        --db $db_loc
-        -f $flake
-        -s $real_system
-        -c $compression
-        --filter-prefix '/bin/'
-    )
-}
+# export def "nix create-index" [
+#     --flake (-f): string = "flake:nixpkgs" # Flake to use
+#     --system (-s): string # Choose a specific system
+#     --compression (-c): int = 3 # Compression level for zstd
+#     --path-cache (-p) # Use the path cache at `~/.cache/nix-index-not-found`
+# ] {
+#     let db_loc = $env.HOME | path join ".cache" "nix-index-not-found"
+#     let real_system = if ($system | is-not-empty) {
+#         $system
+#     } else {
+#         nix config show --json
+#         | from json
+#         | get system.value
+#     }
+#     # Annoyingly the `--path-cache` doesn't have a location...just in the local
+#     # directory.
+#     mkdir $db_loc
+#     cd $db_loc
+#     (
+#         nix-index
+#         --db $db_loc
+#         -f $flake
+#         -s $real_system
+#         -c $compression
+#         --filter-prefix '/bin/'
+#     )
+# }
 
 # Restart the nix-daemon
 #
