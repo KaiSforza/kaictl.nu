@@ -7,4 +7,4 @@ export-env {
 }
 
 # Also set up the commands for cnf
-overlay use ./command_not_found.nu
+export use ./command_not_found.nu *
