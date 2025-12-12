@@ -59,6 +59,8 @@ export def "cmd locate" [
 @example "Create the initial index at a specific location" {nix create-index /tmp/db/}
 export def "nix create-index" [
     db: path = $nix_db
+    --flake: string = "nixpkgs" # Flake to get data from
+    --force # Force regeneration of the index even if it exists
 ]: nothing -> nothing {
     log info "Updating the file data..."
     let backup_db = $"($db).(date now | format date '%J%Q')"
@@ -67,13 +69,25 @@ export def "nix create-index" [
         mv $db $backup_db
     }
     try {
-        if ($nix_db_ | path join "files" | path exists) {
+        if ($nix_db_ | path join "files" | path exists) and not $force {
             log info "Already have a database, using that."
         } else {
+            let flake_attr = nix registry list --verbose
+            | from ssv --minimum-spaces 1 --noheaders
+            | rename type short url
+            | where short =~ $':($flake)$'
+            let flake_output = (
+                nix
+                eval
+                --impure
+                --json
+                $'builtins.getFlake "($flake_attr.0?.url?
+                    | default github:nixos/nixpkgs/nixos-unstable)"'
+            ) | from json
             (
                 nix-index
                 --db $nix_db_
-                -f https://github.com/NixOS/nixpkgs/archive/refs/heads/nixos-unstable.tar.gz
+                -f $flake_output
                 -c 3
                 --filter-prefix '/bin/'
             )
