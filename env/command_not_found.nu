@@ -76,13 +76,15 @@ export def "nix create-index" [
             | from ssv --minimum-spaces 1 --noheaders
             | rename type short url
             | where short =~ $':($flake)$'
+            | get -o 0
+            | default {url: "github:nixos/nixpkgs/nixos-unstable"}
+            | get url
             let flake_output = (
                 nix
                 eval
                 --impure
                 --json
-                $'builtins.getFlake "($flake_attr.0?.url?
-                    | default github:nixos/nixpkgs/nixos-unstable)"'
+                --expr $'builtins.getFlake "($flake_attr)"'
             ) | from json
             (
                 nix-index
