@@ -46,7 +46,7 @@ export def "cmd locate" [
         $pkgs
     } else {
         $pkgs
-        | get package
+        | get install
     }
 }
 
@@ -104,21 +104,22 @@ export def "nix create-index" [
             let hash = $hash_ver.0
             let ver = $hash_ver.1
             let file = $path_parts | skip 4 | path join
+            let package = $p.package | split row '.' | drop | str join '.'
             {
-              repo: "nixpkgs"
-              package: ($p.package | split row '.' | drop | str join '.')
+              repo: $flake
+              package: $package
               version: $ver
               files: $file
               hash: $hash
+              install: $"($flake)#($package)"
             }
           }
         }
-        | into sqlite $db --table-name "nixpkgs"
+        | into sqlite $db --table-name $flake
 
         log debug "Optimizing table."
         open $db
-        | query db "CREATE INDEX idx_nixpkgs
-            ON nixpkgs(files);"
+        | query db $"CREATE INDEX idx_($flake) ON ($flake)\(files);"
 
     } catch {|e|
         if ($backup_db | path exists) {
@@ -177,6 +178,7 @@ export def "pacman create-index" [
         ^pacman -Fx '^(|usr)/s?bin/.+' --machinereadable
         | lines
         | split column (char nul) repo package version file
+        | upsert install {|p| $"($p.repo)/($p.package)"}
         | into sqlite $db -t pacman
         log info $"Saved to sqlite database ($db)"
 
@@ -234,7 +236,7 @@ export def provided-by [
     let cmds = $checkers
     | par-each --keep-order {|cmd|
         match $cmd {
-            "nix-locate" => {mgr: nix pkgs: (nix locate $cmd_name) cmd: $"nix profile add ($env.cnf.registry)#"},
+            "nix-locate" => {mgr: nix pkgs: (nix locate $cmd_name) cmd: $"nix profile add "},
             "pacman" => {mgr: pacman pkgs: (pacman locate $cmd_name) cmd: "pacman -S "},
             # TODO fedora
             # TODO ubuntu
