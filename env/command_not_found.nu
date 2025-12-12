@@ -66,7 +66,7 @@ export def "nix create-index" [
     let backup_db = $"($db).(date now | format date '%J%Q')"
     if ($db | path exists) {
         log info $"Backing up current db to ($backup_db)"
-        mv $db $backup_db
+        mv -v $db $backup_db
     }
     try {
         if ($nix_db_ | path join "files" | path exists) and not $force {
@@ -174,20 +174,19 @@ export def "pacman create-index" [
     mkdir ($db | path dirname)
     try {
         let tmpfiles = mktemp -t -d
-        log info "^pamcan --files --refresh"
-        ^pamcan --files --refresh --dbpath $tmpfiles --logfile /dev/null --root $tmpfiles
+        log info "^pacman --files --refresh"
+        sudo pacman --files --refresh
         log info "Getting all files in common executable file locations"
         ^pacman -Fx '^(|usr)/s?bin/.+' --machinereadable
         | lines
-        | split column (char nul) repo package version file
+        | split column (char nul) repo package version files
         | upsert install {|p| $"($p.repo)/($p.package)"}
         | into sqlite $db -t pacman
         log info $"Saved to sqlite database ($db)"
 
         log debug "Optimizing table."
         open $db
-        | query db "CREATE INDEX idx_pacman
-            ON pacman(files);"
+        | query db "CREATE INDEX idx_pacman ON pacman(files);"
     } catch {|e|
         if ($backup_db | path exists) {
             log error $"Restoring database..."
@@ -295,9 +294,10 @@ export def "main" [
             match (provided-by $cmd_name) {
                 [] => null
                 $pkgs => {
-                    let has_extras = if ($pkgs | length) > ($env.cnf.maxpkgs) { ["  ..."] }
+                    let num = $pkgs | length
+                    let has_extras = if $num > $env.cnf.maxpkgs { ["  ..."] }
                     [
-                        $"The program is currently not installed. Use one of the following:"
+                        $"($num) pkgs found. Use one of the following to install it."
                         ...(
                             $pkgs
                             | first $env.cnf.maxpkgs
