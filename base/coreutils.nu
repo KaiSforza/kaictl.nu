@@ -151,15 +151,109 @@ def nu_complete_ifaces [] {
     sys net | get name
 }
 
+# Create a tree-like ps output in a nushell table
+export def pstree [
+    procs: table # ps -l output here
+    newprocs # new output here for recursion?
+] {
+    if ($newprocs | describe -n) !~ '^table' {
+        $newprocs
+    } else {
+        let with_childs = $newprocs
+        | upsert children {|proc|
+            let children = $procs | where ppid == $proc.pid
+            pstree $procs $children
+        }
+        $with_childs
+        # | where ppid not-in $with_childs.pid
+    }
+}
+
 # A better output for `w`
 @example "Get load average and other info" {ww}
 @example "Get uptime" {ww | get uptime} --result 29sec
-export def ww []: nothing -> record<boot: string, uptime: duration, load: table, sessions: table> {
-    let cpu: record = sys cpu | first
+export def ww [
+    --long (-l) # long version
+]: nothing -> record<boot: string, uptime: duration, load: table, sessions: table> {
+    let cpus = sys cpu | get load_average | uniq
     let tfs: record = sys host
     # Need to do this because nu has no native session info support
     let sessions: list = if (which loginctl | is-not-empty) {
+        let now = (date now)
+        let _cmds = ps -l
+        let kernelpid = $_cmds | where name == kthreadd | get 0?.pid?
+        let cmds = $_cmds | where {|p| $p.pid != kernelpid}
         loginctl list-sessions --json=short | from json
+        | par-each --keep-order {|session|
+            let cgroup = glob $"/sys/fs/cgroup/*.slice/**/session-($session.session).scope"
+            | default -e (
+                [
+                    $"/sys/fs/cgroup/(try {
+                        open $"/proc/($session.leader)/cgroup" | parse "{_}::{c}"
+                    } catch {
+                        [{c: "1"}]
+                    }
+                    | get -o c
+                    | get -o 0)"
+                ]
+            )
+            log warning $"cgroup: ($cgroup)"
+            let loginctl = loginctl session-status $session.session -o json
+            | lines
+            | last
+            | from json
+            let all_info = {
+                # mem: (open ($x | path join "memory.current") | into filesize)
+                user: $session.user
+                uid: $session.uid
+                tty: $session.tty?
+                session: $session.session
+                login: (match $loginctl.__REALTIME_TIMESTAMP? {
+                    null => $tfs.boot_time
+                    $x => {$x | into int | $in * 1000 | into datetime}
+                })
+            } | merge (
+                if $long {
+                    {
+                        idle: (
+                            if $session.idle {
+                                (sys host).boot_time + ($session.since | into duration --unit us)
+                            } else {
+                                $now
+                            }
+                        )
+                    }
+                } else {
+                    {}
+                }
+            )
+            let info: record = match $cgroup {
+                [] => { { } }
+                [$x] => {
+                    let what = ($cmds | where pid == (open ($x | path join "cgroup.procs") | lines | last | into int)).0?
+                    | default {}
+                    {
+                        # cpu: (open ($x | path join "cpu.stat") | from ssv --minimum-spaces 1 --noheaders | transpose -rd | get usage_usec | into duration)
+                        pid: $what.pid?
+                        # what: $what.command?
+                    } | merge (
+                        if $long {
+                            {
+                                cpu: (open ($x | path join "cpu.stat") | from ssv --minimum-spaces 1 --noheaders | transpose -rd | get usage_usec | into duration)
+                                what: $what.command?
+                            }
+                        } else {
+                            {}
+                        }
+                    )
+                }
+                _ => { { } }
+            }
+
+            $all_info | merge $info
+        }
+        | sort-by login
+
     } else {
         w | detect columns --skip 1
     }
@@ -167,7 +261,7 @@ export def ww []: nothing -> record<boot: string, uptime: duration, load: table,
     {
         boot: $tfs.boot_time
         uptime: $tfs.uptime
-        load: ($cpu.load_average | parse "{1m}, {5m}, {15m}" | update cells {detect type})
+        load: ($cpus | parse "{1m}, {5m}, {15m}" | update cells {detect type})
         sessions: $sessions
     }
 }
