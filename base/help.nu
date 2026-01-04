@@ -288,7 +288,6 @@ export def modules [
     --find (-f): string # string to find in module names
     --example (-e) # Show examples in more detail (TODO)
     --short (-s) # Show a short version of the help
-    --all (-a) # Show all elements
 ]: nothing -> any {
     let modules = (scope modules)
 
@@ -344,7 +343,6 @@ export def aliases [
     --find (-f): string # string to find in alias names
     --example (-e) # Show examples in more detail (TODO)
     --short (-s) # Show a short version of the help
-    --all (-a) # Show all elements
 ]: nothing -> any {
     let aliases = (scope aliases | sort-by name)
 
@@ -360,7 +358,6 @@ export def aliases [
         build-alias-page ($found_alias | get 0) {
             short: $short
             example: $example
-            all: $all
         }
     } else {
         $aliases
@@ -686,7 +683,11 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
 
     match $opts {
         {short: true} => [$description],
-        {all: true} => [
+        {example: true} => [
+            $description
+            $examples
+        ]
+        _ => [
             $description
             $extra_description
             $search_terms
@@ -696,18 +697,6 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
             $rest
             $extensions
             $examples
-        ]
-        {example: true} => [
-            $description
-            $examples
-        ]
-        _ => [
-            $description
-            $extra_description
-            $cli_usage
-            $subcommands
-            $rest
-            $extensions
         ]
     }
     | compact
@@ -738,7 +727,6 @@ export def commands [
     --find (-f): string # string to find in command names and description
     --example (-e) # Show examples in more detail (TODO)
     --short (-s) # Show a short version of the help
-    --all (-a) # Show all elements
 ] {
     let commands = (scope commands | sort-by name)
 
@@ -756,7 +744,6 @@ export def commands [
                 find: $find
                 example: $example
                 short: $short
-                all: $all
             }
         }
     } else {
@@ -807,7 +794,6 @@ export def main [
     --find (-f): string # string to find in help items names and description
     --example (-e) # Show examples in more detail (TODO)
     --short (-s) # Show a short version of the help
-    --all (-a) # Show all elements
 ]: [
     nothing -> string
     nothing -> table
@@ -819,13 +805,13 @@ export def main [
 
     let target_item = ($item | str join " ")
 
-    let commands = try { commands $target_item --find $find --all=$all --short=$short --example=$example }
+    let commands = try { commands $target_item --find $find --short=$short --example=$example }
     if ($commands | is-not-empty) { return $commands }
 
-    let aliases = try { aliases $target_item --find $find --all=$all --short=$short --example=$example }
+    let aliases = try { aliases $target_item --find $find --short=$short --example=$example }
     if ($aliases | is-not-empty) { return $aliases }
 
-    let modules = try { modules $target_item --find $find --all=$all --short=$short --example=$example }
+    let modules = try { modules $target_item --find $find --short=$short --example=$example }
     if ($modules | is-not-empty) { return $modules }
 
     if ($find | is-not-empty) {
