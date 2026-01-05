@@ -197,7 +197,6 @@ export def ww [
                     | get -o 0)"
                 ]
             )
-            log warning $"cgroup: ($cgroup)"
             let loginctl = loginctl session-status $session.session -o json
             | lines
             | last
