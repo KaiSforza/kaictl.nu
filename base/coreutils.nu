@@ -152,7 +152,7 @@ def nu_complete_ifaces [] {
 }
 
 # Create a tree-like ps output in a nushell table
-export def pstree [
+def pstree [
     procs: table # ps -l output here
     newprocs # new output here for recursion?
 ] {
@@ -169,101 +169,233 @@ export def pstree [
     }
 }
 
+def "from fk_tab" [name: string = "default"]: string -> table {
+    # from ssv --minimum-spaces 1 --noheaders
+    lines
+    | split column ' '
+    | flatten
+    | rename key value
+    | par-each {|kv|
+        match $kv {
+            {key: $x value: $y} => $kv
+            {key: $x} => {key: $name value: $x}
+            $x => $x
+        }
+    }
+    # parse "{key} {value}"
+    # | rename key value
+}
+
+# from a flat keyed file to a nushell record
+def "from fk" [name: string = "default"]: string -> record {
+    from fk_tab $name
+    | transpose -rd
+}
+
+# Get the group of the process or list of processes
+#
+# The only possible format for these in v2 is `0::/foo/bar`, which makes this a
+# bit simpler. Defaults to the `/sys/fs/cgroup` path as the root.
+#
+# These can be passed into `cgroup parse` directly.
+export def "proc cgroup" [
+    cgroupfs: path = "/sys/fs/cgroup"
+]: [
+    oneof<int, string> -> record<id: int, ss: list, cg: path>
+    list<oneof<int, string>> -> table<id: int, ss: list, cg: path>
+] {
+    let pids = $in
+    let pcg = {|pid|
+        open $"/proc/($pid)/cgroup"
+        | parse '{id}:{ss}:{cg}'
+        | first
+        | into int id
+        | upsert ss {|p| $p.ss | split row ',' | compact -e}
+        | upsert cg {|p| [$cgroupfs ...($p.cg | split row (char psep))] | path join}
+    }
+    match ($pids | describe) {
+        list<int> | list<string> => ($pids | par-each --keep-order $pcg)
+        _ => (do $pcg $pids)
+    }
+}
+
+# Parse the cgroup info for `$subsys`
+export def "cgroup parse" [subsys: string]: oneof<string, record> -> table {
+    match $in {
+        {cg: $x} => $x
+        $x => $x
+    }
+    | path join $subsys
+    | open
+    | from fk_tab
+}
+
+# Get info about the CPU usage
+export def "cgroup cpu" []: oneof<string, record> -> record {
+    cgroup parse cpu.stat
+    | par-each --keep-order {|r|
+        {
+            key: $r.key
+            val: (
+                if $r.key =~ '_usec' {
+                    $r.value | into duration --unit us
+                } else {
+                    $r.value | detect type
+                }
+            )
+        }
+    }
+    | transpose -rd
+}
+
+# Get memory usage info (all values in filesize)
+export def "cgroup mem" []: oneof<string, record> -> record {
+    let sr = $in
+    $sr
+    | cgroup parse memory.stat
+    | into filesize value
+    | transpose -rd
+    | merge {
+        current: (try {
+            ($sr | cgroup parse memory.current | into filesize value).0.value
+        } catch {0})
+    }
+}
+
+# Parse stats for each disk
+export def "cgroup io" []: oneof<string, record> -> table {
+    cgroup parse io.stat
+    | par-each {|disk|
+        {disk: $disk.key}
+        | merge (
+            $disk.value
+            | split row ' '
+            | parse '{key}={val}'
+            | transpose -rd
+            | into filesize rbytes wbytes dbytes
+        )
+    }
+}
+
+# Parses the /proc/*/stat files
+def "proc stat" [
+    ticksize: int = 100 # CPU Tick Size (usually 100, but could be different)
+]: oneof<int, string> -> record {
+    let stat = open $"/proc/($in)/stat" | str trim
+    let comm = $stat | parse '{_} ({comm}) {_}' | get 0.comm
+    # Taken from `man 5 proc_pid_stat`
+    let columns = [
+        pid comm state ppid pgrp # 5
+        session tty_nr tpgid flags minflt # 10
+        cminflt majflt cmajflt utime stime # 15
+        cutime cstime priority nice num_threads # 20
+        itrealvalue starttime vsize rss rsslim # 25
+        startcode encode startstack kstkesp kstkeip # 30
+        signal blocked sigignore sigcatch wchan # 35
+        nswap cnswap exit_signal processor rt_priority # 40
+        policy delayacct_blkio_ticks guest_time cguest_time start_data # 45
+        end_data start_brk arg_start arg_end env_start # 50
+        env_end exit_code
+    ]
+    $stat
+    | str replace --regex '\(.+\)' 'PROC'
+    | split column ' '
+    | rename ...$columns
+    | first
+    | merge {comm: $comm}
+    | upsert starttime {|p|
+        | into int
+        | $in / $ticksize
+        | into duration --unit sec
+        | $in + (sys host).boot_time
+    }
+}
+
 # A better output for `w`
 @example "Get load average and other info" {ww}
 @example "Get uptime" {ww | get uptime} --result 29sec
 export def ww [
-    --sessions (-s) # Show session info
     --long (-l) # long version
 ]: nothing -> record<boot: string, uptime: duration, load: table, sessions: table> {
     let cpus = sys cpu | get load_average | uniq
     let tfs: record = sys host
     # Need to do this because nu has no native session info support
-    let session_l: list = if $sessions {
-        if (which loginctl | is-not-empty) {
-            if $long {
-                let now = (date now)
-                let _cmds = ps -l
-                let kernelpid = $_cmds | where name == kthreadd | get 0?.pid?
-                let cmds = $_cmds | where {|p| $p.pid != kernelpid}
-                loginctl list-sessions --json=short | from json
-                | par-each --keep-order {|session|
-                    let cgroup = glob $"/sys/fs/cgroup/*.slice/**/session-($session.session).scope"
-                    | default -e (
-                        [
-                            $"/sys/fs/cgroup/(try {
-                                open $"/proc/($session.leader)/cgroup" | parse "{_}::{c}"
-                            } catch {
-                                [{c: "1"}]
-                            }
-                            | get -o c
-                            | get -o 0)"
-                        ]
-                    )
-                    let loginctl = loginctl session-status $session.session -o json
-                    | lines
-                    | last
-                    | from json
-                    let all_info = {
-                        # mem: (open ($x | path join "memory.current") | into filesize)
-                        user: $session.user
-                        uid: $session.uid
-                        tty: $session.tty?
-                        session: $session.session
-                        login: (match $loginctl.__REALTIME_TIMESTAMP? {
-                            null => $tfs.boot_time
-                            $x => {$x | into int | $in * 1000 | into datetime}
-                        })
-                    } | merge (
-                        if $long {
-                            {
-                                idle: (
-                                    if $session.idle {
-                                        (sys host).boot_time + ($session.since | into duration --unit us)
-                                    } else {
-                                        $now
-                                    }
-                                )
-                            }
-                        } else {
-                            {}
-                        }
-                    )
-                    let info: record = match $cgroup {
-                        [] => { { } }
-                        [$x] => {
-                            let what = ($cmds | where pid == (open ($x | path join "cgroup.procs") | lines | last | into int)).0?
-                            | default {}
-                            {
-                                # cpu: (open ($x | path join "cpu.stat") | from ssv --minimum-spaces 1 --noheaders | transpose -rd | get usage_usec | into duration)
-                                pid: $what.pid?
-                                # what: $what.command?
-                            } | merge (
-                                if $long {
-                                    {
-                                        cpu: (open ($x | path join "cpu.stat") | from ssv --minimum-spaces 1 --noheaders | transpose -rd | get usage_usec | into duration)
-                                        what: $what.command?
-                                    }
+    let session_l: list = if (which loginctl | is-not-empty) {
+        if $long {
+            let ticksize: int = getconf CLK_TCK | default -e 100 | into int
+            let now = (date now)
+            let total_cpu = "/sys/fs/cgroup" | cgroup cpu
+            loginctl list-sessions --json=short | from json
+            | par-each --keep-order {|session|
+                let cgroup = glob $"/sys/fs/cgroup/*.slice/**/session-($session.session).scope"
+                | default -e (
+                    [
+                        # (try {
+                            ($session.leader | proc cgroup).cg
+                        # })
+                    ]
+                )
+
+                let all_info = {
+                    user: $session.user
+                    uid: $session.uid
+                    tty: $session.tty?
+                    leader: $session.leader
+                    session: $session.session
+                    login: ($session.leader | proc stat | get starttime)
+                } | merge (
+                    if $long {
+                        {
+                            idle: (
+                                if $session.idle {
+                                    $tfs.boot_time + ($session.since | into duration --unit us)
                                 } else {
-                                    {}
+                                    $now
                                 }
                             )
                         }
-                        _ => { { } }
+                    } else {
+                        {}
                     }
-
-                    $all_info | merge $info
+                )
+                let info: record = match $cgroup {
+                    [] => { { } }
+                    [$x] => {
+                        # Get most recently added PID
+                        let lastpid = (open ($x | path join "cgroup.procs")
+                            | lines | last | into int) | default 1
+                        {
+                            pid: $lastpid
+                            # what: $what.command?
+                        } | merge (
+                            if $long {
+                                let cpu = ($x | cgroup cpu | get usage_usec)
+                                {
+                                    # cpu: ($x | cgroup cpu | get usage_usec)
+                                    mem: ($x | cgroup mem | get current)
+                                    what: (
+                                        open $"/proc/($lastpid)/cmdline"
+                                        | str trim
+                                        | str replace --all (char nul) ' '
+                                    )
+                                }
+                            } else {
+                                {}
+                            }
+                        )
+                    }
+                    _ => { { } }
                 }
-                | sort-by login
-            } else {
-                loginctl list-sessions --json=short | from json
-            }
 
+                $all_info | merge $info
+            }
+            | sort-by login
         } else {
-            w | detect columns --skip 1
+            loginctl list-sessions --json=short | from json
         }
+
     } else {
-        []
+        w | detect columns --skip 1
     }
 
     {
