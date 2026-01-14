@@ -330,9 +330,11 @@ export def ww [
                 let cgroup = glob $"/sys/fs/cgroup/*.slice/**/session-($session.session).scope"
                 | default -e (
                     [
-                        # (try {
+                        (try {
                             ($session.leader | proc cgroup).cg
-                        # })
+                        } catch {
+                            "/sys/fs/cgroup/"
+                        })
                     ]
                 )
 
@@ -342,7 +344,14 @@ export def ww [
                     tty: $session.tty?
                     leader: $session.leader
                     session: $session.session
-                    login: ($session.leader | proc stat | get starttime)
+                    login: (
+                        (open ($cgroup | path join "cgroup.procs")
+                            | lines
+                            | first
+                            | into int
+                        ) | default 1
+                        | proc stat
+                    ).starttime
                 } | merge (
                     if $long {
                         {
