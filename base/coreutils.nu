@@ -200,18 +200,22 @@ def "from fk" [name: string = "default"]: string -> record {
 # These can be passed into `cgroup parse` directly.
 export def "proc cgroup" [
     cgroupfs: path = "/sys/fs/cgroup"
+    --session (-s) # Use a session instead of a PID
 ]: [
     oneof<int, string> -> record<id: int, ss: list, cg: path>
     list<oneof<int, string>> -> table<id: int, ss: list, cg: path>
 ] {
     let pids = $in
     let pcg = {|pid|
-        open $"/proc/($pid)/cgroup"
-        | parse '{id}:{ss}:{cg}'
-        | first
-        | into int id
-        | upsert ss {|p| $p.ss | split row ',' | compact -e}
-        | upsert cg {|p| [$cgroupfs ...($p.cg | split row (char psep))] | path join}
+        [/proc $"($pid)" cgroup] | path join
+            | open
+            | parse '{id}:{ss}:{cg}'
+            | first
+            | into int id
+            | upsert ss {|p| $p.ss | split row ',' | compact -e}
+            | upsert cg {|p|
+                [$cgroupfs] ++ ($p.cg | split row (char psep)) | path join
+            }
     }
     match ($pids | describe) {
         list<int> | list<string> => ($pids | par-each --keep-order $pcg)
@@ -224,10 +228,9 @@ export def "cgroup parse" [subsys: string]: oneof<string, record> -> table {
     match $in {
         {cg: $x} => $x
         $x => $x
-    }
-    | path join $subsys
-    | open
-    | from fk_tab
+    } | path join $subsys
+        | open
+        | from fk_tab
 }
 
 # Get info about the CPU usage
@@ -311,6 +314,58 @@ def "proc stat" [
     }
 }
 
+# Session info 
+export def session_info [
+    session
+]: nothing -> record {
+    # Get cgroup directory
+    let cgroup = glob -SF $"/sys/fs/cgroup/**/session-($session.session).scope"
+    let total_cpu = "/sys/fs/cgroup" | cgroup cpu
+    {
+        user: $session.user
+        uid: $session.uid
+        tty: $session.tty?
+        leader: $session.leader
+        session: $session.session
+        login: (0 | into datetime)
+    }
+    | merge (
+            if $session.idle {
+                {idle: ((sys host).boot_time + ($session.since | into duration --unit us))}
+            } else { { } }
+        )
+    | merge (
+        match $cgroup {
+            [$x] => {
+                # Get most recently added PID
+                let lastpid = (open ($x | path join "cgroup.procs")
+                    | lines | last | into int) | default 1
+                let cpu = ($x | cgroup cpu | get usage_usec)
+                {
+                    login: (
+                        (open ($cgroup | path join "cgroup.procs")
+                            | lines
+                            | first
+                            | into int
+                        ) | default 1
+                        | proc stat
+                    ).starttime
+                    pid: $lastpid
+                    cpu: (($x | cgroup cpu | get usage_usec) / $total_cpu.usage_usec)
+                    mem: ($x | cgroup mem | get current)
+                    what: (
+                        open $"/proc/($lastpid)/cmdline"
+                        | str trim
+                        | str replace --all (char nul) ' '
+                    )
+                    # what: $what.command?
+                }
+            }
+            _ => { { } }
+        }
+    )
+}
+
 # A better output for `w`
 @example "Get load average and other info" {ww}
 @example "Get uptime" {ww | get uptime} --result 29sec
@@ -324,79 +379,9 @@ export def ww [
         if $long {
             let ticksize: int = getconf CLK_TCK | default -e 100 | into int
             let now = (date now)
-            let total_cpu = "/sys/fs/cgroup" | cgroup cpu
             loginctl list-sessions --json=short | from json
-            | par-each --keep-order {|session|
-                let cgroup = glob $"/sys/fs/cgroup/*.slice/**/session-($session.session).scope"
-                | default -e (
-                    [
-                        (try {
-                            ($session.leader | proc cgroup).cg
-                        } catch {
-                            "/sys/fs/cgroup/"
-                        })
-                    ]
-                )
-
-                let all_info = {
-                    user: $session.user
-                    uid: $session.uid
-                    tty: $session.tty?
-                    leader: $session.leader
-                    session: $session.session
-                    login: (
-                        (open ($cgroup | path join "cgroup.procs")
-                            | lines
-                            | first
-                            | into int
-                        ) | default 1
-                        | proc stat
-                    ).starttime
-                } | merge (
-                    if $long {
-                        {
-                            idle: (
-                                if $session.idle {
-                                    $tfs.boot_time + ($session.since | into duration --unit us)
-                                } else {
-                                    $now
-                                }
-                            )
-                        }
-                    } else {
-                        {}
-                    }
-                )
-                let info: record = match $cgroup {
-                    [] => { { } }
-                    [$x] => {
-                        # Get most recently added PID
-                        let lastpid = (open ($x | path join "cgroup.procs")
-                            | lines | last | into int) | default 1
-                        {
-                            pid: $lastpid
-                            # what: $what.command?
-                        } | merge (
-                            if $long {
-                                let cpu = ($x | cgroup cpu | get usage_usec)
-                                {
-                                    # cpu: ($x | cgroup cpu | get usage_usec)
-                                    mem: ($x | cgroup mem | get current)
-                                    what: (
-                                        open $"/proc/($lastpid)/cmdline"
-                                        | str trim
-                                        | str replace --all (char nul) ' '
-                                    )
-                                }
-                            } else {
-                                {}
-                            }
-                        )
-                    }
-                    _ => { { } }
-                }
-
-                $all_info | merge $info
+            | par-each {|session|
+                session_info $session
             }
             | sort-by login
         } else {
