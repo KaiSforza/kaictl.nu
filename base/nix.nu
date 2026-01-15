@@ -376,7 +376,6 @@ export def "nix nh" [
             build
             --print-out-paths
             --no-link
-            # --builders 'ssh-ng://kaictl@nixps x86_64-linux - 16 100 kvm,nixos-test,big-parallel,benchmark - c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUVPYWc3VjNtVmhDaWVrMEFNaTYyUFZQbnM2TTl0VDNxUkhVTjJmeEJhMHU='
             ...(
                 $nodes
                 | each {|node|
@@ -406,6 +405,22 @@ export def "nix nh" [
         } else {
             log info $"Just built derivation on ($d.node). Continuing."
         }
+
+        log info $"Checking differences for ($d.node)"
+        let changes = if $d.node != (sys host).hostname {
+            ssh $d.node nh ...[
+                os $command
+                --dry
+                $"($d.output)"
+            ] | complete
+        } else {
+            run-external $nh ...[
+                os $command
+                --dry
+                $"($d.output)"
+            ] | complete
+        }
+
         if $command != build {
             log info $"Running `nh os ($command)` for host '($d.node)'..."
             run-external $nh ...[
@@ -419,24 +434,6 @@ export def "nix nh" [
                 })
             ]
         }
+        {node: $d.node changes: ($changes.stderr ++ $changes.stdout)}
     }
-
-    # if $command != build {
-    #     $table
-    #     | each {|d|
-    #         (
-    #             nix run $"($flake)#nh" --
-    #                 os $command
-    #                 $"($d.output)"
-    #                 ...(if $d.node != (sys host).hostname {
-    #                     # Remote
-    #                     [--target-host $d.host]
-    #                 })
-    #                 ...(if $version.major >= 4 and $version.minor >= 3 {
-    #                     # passwordless sudo
-    #                     [--elevation-strategy passwordless]
-    #                 })
-    #         )
-    #     }
-    # }
 }
