@@ -53,7 +53,7 @@ export def 'nix s regen' [
 
 # Search in known nix flakes
 export def "nix s" [
-    --path (-p): path = $CNF_DB
+    --path (-p): path = $DB_NIX_S
     --exact (-e) # use exact search
     --flake: string = "n" # Which flake to search against
     --all-flakes (-a) # Search in all flakes
@@ -102,7 +102,7 @@ export def "nix s" [
 @example "Show all history that would be wiped" {nix profile wipe-all-history}
 @example "Delete all history older than 1 day" {nix profile wipe-all-history --run}
 @example "Dry-run deleting all history" {nix profile wipe-all-history -o 0day}
-export def "nix profile wipe-all-history" [
+def "nix profile wipe-all-history" [
     --older-than (-o): duration = 1day # How many days of history to keep
     --run # Don't do a dry-run
 ]: nothing -> any {
@@ -154,7 +154,7 @@ export def "nix profile wipe-all-history" [
 }
 
 # Recursively list configured builders
-export def "nix builders" [
+def "nix builders" [
     --at-file: string # Show builders at this location
     --nushell (-n) # Nushell output
 ]: [
@@ -222,7 +222,7 @@ def "nu-complete nodes" []: any -> list<string> {
 # Updates multiple nix nodes
 @example "Update two nodes" {nix rebuild nodes foo bar}
 @example "Update one node and switch" {nix rebuild nodes -a switch foo}
-export def "nix rebuild nodes" [
+def "nix rebuild nodes" [
     --builders: list<string>@"nix builders" = [] # Which builder to use
     --action (-a): string@[ "switch" "boot" "test" "build" ] = "test" # What `nixos-rebuild` action to run
     --verbose (-v) # Be verbose
@@ -261,7 +261,7 @@ export def "nix rebuild nodes" [
 @example "Copy from a derivation" {
     nix copy drv --from ssh://foo /nix/store/somehash-name.drv
 } --result "/nix/store/someotherhash-name"
-export def "nix copy drv" [
+def "nix copy drv" [
     --from: string # Where to copy from
     --to: string # Where to send the files
     drv: path # Path to the remote nix derivation (ending in `.drv`)
@@ -292,7 +292,7 @@ export def "nix copy drv" [
 # The compression level doesn't really matter and the size benefits are minimal
 # but 3 is a 'normal' compression, not 22. The main part is the `--filter-prefix`
 # to get rid of the non '/bin/' paths.
-# export def "nix create-index" [
+# def "nix create-index" [
 #     --flake (-f): string = "flake:nixpkgs" # Flake to use
 #     --system (-s): string # Choose a specific system
 #     --compression (-c): int = 3 # Compression level for zstd
