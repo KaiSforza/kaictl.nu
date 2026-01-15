@@ -6,6 +6,33 @@ other commands.
 Also includes a bunch of environment stuff that could be put into an autoload,
 but is separate and can be used with `overlay use ./kaictl.nu/env`.
 
+If there are any commands or improvements that can be added here, please open an issue!
+
+## Why?
+
+Originally this was just a repo for me to consume as a non-flake input for my
+nix configuration, but it has grown quite a bit. Nu is a very nice shell, but it
+gets so much nicer when the commands are able to output native nu types. This
+was the main factor for `ww`, since I wanted to see load avg as ints, lists of
+sessions and not just a simple string output from `w`. `ww` focuses almost
+entirely on Linux and systemd, using the `cgroupfs` to get proper information
+about the processes of each session.
+
+`l` was created because the order of the columns in nushell's `ls` doesn't
+really map onto the output of coreutils `ls`.
+
+My other goal was speed. Some of the commands in nix take quite a while,
+especially when they have to go and load a whole flake (and its dependencies)
+before giving a proper answer. The default `command_not_found` was really slow,
+and even the one recommended by `nix-index` took about 2 seconds on my terrible
+hardware. With some tweaks I was able to get that down to a reasonable time
+(smaller db, only executables), but even then I was parsing the strings every
+time and I wanted to avoid that. `nix create-index` creates a 'native' sqlite
+database that can be queried almost instantly by the `nix locate` command,
+allowing for easy and fast lookups, with that command, as well as the ability to
+use the sqlite file outside these specific nushell commands. I did the same for
+`pacman`, and intend to add more package managers in the future.
+
 ## `base`
 
 Contains the commands and other things that users will probably want, without
@@ -73,9 +100,9 @@ support for both `nix` and `pacman` for now.
 [nh]: https://github.com/nix-community/nh
 [nix-index]: https://github.com/nix-community/nix-index
 
-### WIP
+## WIP
 
-#### Docker replacement `pd`
+### Docker replacement `pd`
 
 Outputs docker/podman output as nushell objects for easy searching and much,
 much better completion. Attempts to not use the Docker or Podman CLI at all,
