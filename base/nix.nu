@@ -348,3 +348,95 @@ export def "nix daemon restart" [
         after: (ps | where name =~ nix-daemon)
     }
 }
+
+def nu_complete_nhcommands [] {
+    [build boot test switch]
+}
+
+export def "nix nh" [
+    command: string@nu_complete_nhcommands # What to do in `nh`
+    ...nodes: string
+] {
+    log info "Building and sending derivations"
+    let flake: string = $env.NH_OS_FLAKE?
+    | default $env.NH_FLAKE?
+    | default "/etc/nixos"
+    let nh = nix build --no-link --print-out-paths $"($flake)#nh"
+    | path join bin nh
+    let nom = nix build --no-link --print-out-paths $"($flake)#nix-output-monitor"
+    | path join bin nom
+    let version = run-external $nh ...[--version]
+    | parse "nh {major}.{minor}.{micro}"
+    | update cells {detect type}
+    | first
+
+    # pre-build everything together
+    let output =  (
+        run-external $nom ...[
+            build
+            --print-out-paths
+            --no-link
+            # --builders 'ssh-ng://kaictl@nixps x86_64-linux - 16 100 kvm,nixos-test,big-parallel,benchmark - c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUVPYWc3VjNtVmhDaWVrMEFNaTYyUFZQbnM2TTl0VDNxUkhVTjJmeEJhMHU='
+            ...(
+                $nodes
+                | each {|node|
+                    $"($flake)#nixosConfigurations.($node).config.system.build.toplevel"
+                }
+            )
+        ]
+    )
+    | lines
+    | wrap output
+
+    let table = $nodes | wrap node
+    | merge $output
+
+    log info $"Finished building."
+    log info $"list time: (char newline)($table | table -e)"
+
+    $table
+    | par-each {|d|
+        if $d.node != (sys host).hostname {
+            log info $"Sending built derivation to '($d.node)'..."
+            (
+                nix copy
+                --to $"ssh://($d.node)"
+                $d.output
+            )
+        } else {
+            log info $"Just built derivation on ($d.node). Continuing."
+        }
+        if $command != build {
+            log info $"Running `nh os ($command)` for host '($d.node)'..."
+            run-external $nh ...[
+                os $command
+                $"($d.output)"
+                ...(if $d.node != (sys host).hostname {
+                    [--target-host $d.node]
+                })
+                ...(if $version.major >= 4 and $version.minor >= 3 {
+                    [--elevation-strategy passwordless]
+                })
+            ]
+        }
+    }
+
+    # if $command != build {
+    #     $table
+    #     | each {|d|
+    #         (
+    #             nix run $"($flake)#nh" --
+    #                 os $command
+    #                 $"($d.output)"
+    #                 ...(if $d.node != (sys host).hostname {
+    #                     # Remote
+    #                     [--target-host $d.host]
+    #                 })
+    #                 ...(if $version.major >= 4 and $version.minor >= 3 {
+    #                     # passwordless sudo
+    #                     [--elevation-strategy passwordless]
+    #                 })
+    #         )
+    #     }
+    # }
+}

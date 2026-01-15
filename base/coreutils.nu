@@ -320,12 +320,15 @@ export def session_info [
 ]: nothing -> record {
     # Get cgroup directory
     let cgroup = glob -SF $"/sys/fs/cgroup/**/session-($session.session).scope"
+    | default -e [
+        ($session.leader | proc cgroup).cg
+    ]
     let total_cpu = "/sys/fs/cgroup" | cgroup cpu
     {
         user: $session.user
         uid: $session.uid
-        tty: $session.tty?
-        leader: $session.leader
+        # tty: $session.tty?
+        # leader: $session.leader
         session: $session.session
         login: (0 | into datetime)
     }
@@ -338,8 +341,7 @@ export def session_info [
         match $cgroup {
             [$x] => {
                 # Get most recently added PID
-                let lastpid = (open ($x | path join "cgroup.procs")
-                    | lines | last | into int) | default 1
+                let pids = (open ($x | path join "cgroup.procs") | lines)
                 let cpu = ($x | cgroup cpu | get usage_usec)
                 {
                     login: (
@@ -350,13 +352,20 @@ export def session_info [
                         ) | default 1
                         | proc stat
                     ).starttime
-                    pid: $lastpid
                     cpu: (($x | cgroup cpu | get usage_usec) / $total_cpu.usage_usec)
                     mem: ($x | cgroup mem | get current)
                     what: (
-                        open $"/proc/($lastpid)/cmdline"
-                        | str trim
-                        | str replace --all (char nul) ' '
+                        $pids
+                        | par-each {|pid|
+                            {
+                                pid: $pid
+                                cmdline: (
+                                    open $"/proc/($pid)/cmdline"
+                                    | str trim
+                                    | str replace --all (char nul) ' '
+                                )
+                            }
+                        }
                     )
                     # what: $what.command?
                 }
