@@ -258,9 +258,19 @@ def build-module-page [module: record] {
         )"
     ]}
 
-    let aliases = if ($module.aliases? | is-not-empty) {[
+    let allaliases: table = scope aliases
+    let aliases: table = if ($module.aliases? | is-not-empty) {[
         (build-help-header "Exported aliases")
-        $"($indent)($module.aliases.name | str join (char newline))"
+        $"($module.aliases | each {|alias|
+            let a = $allaliases
+            | where name == $alias.name
+            | get 0?
+            | default {description: ""}
+            {
+                n: $'(ansi cb)($alias.name)(ansi rst)'
+                d: $a.description
+            }
+        } | details)"
     ]}
 
     # Always show the env block
