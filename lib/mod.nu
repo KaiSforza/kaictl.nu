@@ -98,3 +98,33 @@ export def "str wrap" [
     | table -e --width $width --index=false
     | ansi strip
 }
+
+# Check if a package is installed and return the path, else return the nix path
+#
+# Basically an easy way to use `nix run` without having to check and do the
+# `--offline` flag. or check if that exists somewhere in the flake we use.
+#
+# Defaults to the `bin/$in` path, but can be overridden by `--bin`.
+@example "Run nh" {run-external ("nh" | else_nix "nixpkgs#nh") ...}
+export def else_nix [
+    --bin (-b): string # Override the binary path
+    nixpkg: string 
+]: string -> path {
+    let cmd = $in
+    match (which -a $cmd | where type == external) {
+        [] => {
+            log debug $"Using nix package from ($nixpkg)"
+            let out = nix build --no-link --print-out-paths $nixpkg
+            | path join bin ($bin | default $cmd)
+            log debug $"path: ($out)"
+            $out
+        }
+        $x => {
+            let out = $x.0.path
+            log debug $"Already installed, using ($out)"
+            $out
+        }
+    }
+}
+
+

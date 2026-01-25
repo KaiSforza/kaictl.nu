@@ -361,10 +361,8 @@ export def "nix nh" [
     let flake: string = $env.NH_OS_FLAKE?
     | default $env.NH_FLAKE?
     | default "/etc/nixos"
-    let nh = nix build --no-link --print-out-paths $"($flake)#nh"
-    | path join bin nh
-    let nom = nix build --no-link --print-out-paths $"($flake)#nix-output-monitor"
-    | path join bin nom
+    let nh = "nh" | else_nix  $"($flake)#nh"
+    let nom = "nom" | else_nix $"($flake)#nix-output-monitor"
     let version = run-external $nh ...[--version]
     | parse "nh {major}.{minor}.{micro}"
     | update cells {detect type}
