@@ -9,7 +9,7 @@ use ../lib *
 export def 'nix s regen' [
     --all # Regenerate all flakes in `nix registry list`
     --flakes (-f): list<string> = ["nixpkgs"] # Regenerate just this flake
-] {
+]: nothing -> table {
     let flake_list: list<string> = if $all {
         nix registry list
         | from ssv --minimum-spaces 1 --noheaders
@@ -354,9 +354,10 @@ def nu_complete_nhcommands [] {
 }
 
 export def "nix nh" [
+    --no-use-ssh (-S) # Don't use ssh, use nix/nh remoting
     command: string@nu_complete_nhcommands # What to do in `nh`
     ...nodes: string
-] {
+]: nothing -> record {
     log info "Building and sending derivations"
     let flake: string = $env.NH_OS_FLAKE?
     | default $env.NH_FLAKE?
@@ -393,7 +394,8 @@ export def "nix nh" [
 
     $table
     | par-each {|d|
-        if $d.node != (sys host).hostname {
+        let remote = $d.node != (sys host).hostname
+        if $remote {
             log info $"Sending built derivation to '($d.node)'..."
             (
                 nix copy
@@ -405,33 +407,44 @@ export def "nix nh" [
         }
 
         log info $"Checking differences for ($d.node)"
-        let changes = if $d.node != (sys host).hostname {
-            ssh $d.node nh ...[
-                os $command
-                --dry
-                $"($d.output)"
-            ] | complete
+        let nhcmd: record = if not $remote {
+            log info $"Running local nh at `($nh)`"
+            {cmd: [$nh]}
         } else {
-            run-external $nh ...[
-                os $command
-                --dry
-                $"($d.output)"
-            ] | complete
+            log info $"Remote nh being called through ssh"
+            {cmd: [ssh $d.node -- nh]}
         }
+        let dry_cmd: string = if $command == build {"boot"} else {$command}
+        $nhcmd.env? | default {} | load-env
+        let changes = run-external ...$nhcmd.cmd ...[
+            os $dry_cmd
+            --dry
+            $"($d.output)"
+        ] | complete
 
         if $command != build {
             log info $"Running `nh os ($command)` for host '($d.node)'..."
-            run-external $nh ...[
+            run-external ...$nhcmd.cmd ...[
                 os $command
-                $"($d.output)"
-                ...(if $d.node != (sys host).hostname {
-                    [--target-host $d.node]
-                })
-                ...(if $version.major >= 4 and $version.minor >= 3 {
+                ...(if $remote and $version.major >= 4 and $version.minor >= 3 {
                     [--elevation-strategy passwordless]
                 })
+                $"($d.output)"
             ]
         }
-        {node: $d.node changes: ($changes.stderr ++ $changes.stdout)}
+        let out = {
+            key: $d.node
+            data: {
+                path: $d.output
+                diff: ($changes.stderr ++ $changes.stdout)
+            }
+        }
+        let out_path: path = $nu.cache-dir | path join $"nix-nh-(date now | format date '%J%Q')"
+        $out
+        to nuon
+        | save -f $out_path
+        log info $"saved to ($out_path)"
+        $out
     }
+    | transpose -rd
 }
