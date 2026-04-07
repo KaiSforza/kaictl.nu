@@ -169,26 +169,14 @@ def pstree [
     }
 }
 
-def "from fk_tab" [name: string = "default"]: string -> table {
-    # from ssv --minimum-spaces 1 --noheaders
+export def "from fk_tab" []: string -> table {
     lines
-    | split column ' '
-    | flatten
-    | rename key value
-    | par-each {|kv|
-        match $kv {
-            {key: $x value: $y} => $kv
-            {key: $x} => {key: $name value: $x}
-            $x => $x
-        }
-    }
-    # parse "{key} {value}"
-    # | rename key value
+    | split column ' ' key value
 }
 
 # from a flat keyed file to a nushell record
-def "from fk" [name: string = "default"]: string -> record {
-    from fk_tab $name
+def "from fk" []: string -> record {
+    from fk_tab
     | transpose -rd
 }
 
@@ -200,31 +188,28 @@ def "from fk" [name: string = "default"]: string -> record {
 # These can be passed into `cgroup parse` directly.
 export def "proc cgroup" [
     cgroupfs: path = "/sys/fs/cgroup"
-    --session (-s) # Use a session instead of a PID
+    --session (-s): record<user: int> # Use a session instead of a PID
 ]: [
-    oneof<int, string> -> record<id: int, ss: list, cg: path>
+    oneof<int, string> -> table<id: int, ss: list, cg: path>
     list<oneof<int, string>> -> table<id: int, ss: list, cg: path>
 ] {
-    let pids = $in
-    let pcg = {|pid|
-        [/proc $"($pid)" cgroup] | path join
+    par-each {|pid|
+        let path = [/proc $"($pid)" cgroup] | path join
+        if ($path | path exists) {
+            $path
             | open
-            | parse '{id}:{ss}:{cg}'
-            | first
-            | into int id
-            | upsert ss {|p| $p.ss | split row ',' | compact -e}
-            | upsert cg {|p|
-                [$cgroupfs] ++ ($p.cg | split row (char psep)) | path join
-            }
+        }
     }
-    match ($pids | describe) {
-        list<int> | list<string> => ($pids | par-each --keep-order $pcg)
-        _ => (do $pcg $pids)
-    }
+    | split column ':' id ss cg
+    | into int id
+    | upsert ss {|p| $p.ss | split row ',' | compact -e}
+    | upsert cg {|p| $"($cgroupfs)($p.cg)"}
 }
 
 # Parse the cgroup info for `$subsys`
-export def "cgroup parse" [subsys: string]: oneof<string, record> -> table {
+export def "cgroup parse" [
+    subsys: string
+]: oneof<string, record> -> table {
     match $in {
         {cg: $x} => $x
         $x => $x
@@ -240,11 +225,8 @@ export def "cgroup cpu" []: oneof<string, record> -> record {
         {
             key: $r.key
             val: (
-                if $r.key =~ '_usec' {
-                    $r.value | into duration --unit us
-                } else {
-                    $r.value | detect type
-                }
+                $r.value
+                | if $r.key =~ '_usec' {into duration -u us} else {into int}
             )
         }
     }
@@ -273,6 +255,8 @@ export def "cgroup io" []: oneof<string, record> -> table {
         | merge (
             $disk.value
             | split row ' '
+            | skip
+            | split column '=' key val
             | parse '{key}={val}'
             | transpose -rd
             | into filesize rbytes wbytes dbytes
@@ -285,7 +269,6 @@ def "proc stat" [
     ticksize: int = 100 # CPU Tick Size (usually 100, but could be different)
 ]: oneof<int, string> -> record {
     let stat = open $"/proc/($in)/stat" | str trim
-    let comm = $stat | parse '{_} ({comm}) {_}' | get 0.comm
     # Taken from `man 5 proc_pid_stat`
     let columns = [
         pid comm state ppid pgrp # 5
@@ -305,7 +288,6 @@ def "proc stat" [
     | split column ' '
     | rename ...$columns
     | first
-    | merge {comm: $comm}
     | upsert starttime {|p|
         | into int
         | $in / $ticksize
@@ -317,12 +299,13 @@ def "proc stat" [
 # Session info 
 export def session_info [
     session
+    --resource (-r) # Only show resources not all of the processes
 ]: nothing -> record {
     # Get cgroup directory
-    let cgroup = glob -SF $"/sys/fs/cgroup/**/session-($session.session).scope"
-    | default -e [
-        ($session.leader | proc cgroup).cg
-    ]
+    let cgroup = match (glob -SF $"/sys/fs/cgroup/**/session-($session.session).scope") {
+        [] => {($session.leader | proc cgroup | get cg)}
+        $x => $x
+    }
     let total_cpu = "/sys/fs/cgroup" | cgroup cpu
     {
         user: $session.user
@@ -342,10 +325,9 @@ export def session_info [
             [$x] => {
                 # Get most recently added PID
                 let pids = (open ($x | path join "cgroup.procs") | lines)
-                let cpu = ($x | cgroup cpu | get usage_usec)
                 {
                     login: (
-                        (open ($cgroup | path join "cgroup.procs")
+                        (open ($x | path join "cgroup.procs")
                             | lines
                             | first
                             | into int
@@ -353,8 +335,8 @@ export def session_info [
                         | proc stat
                     ).starttime
                     cpu: (($x | cgroup cpu | get usage_usec) / $total_cpu.usage_usec)
-                    mem: ($x | cgroup mem | get current)
-                    what: (
+                    mem: ($x | path join memory.current | open | into filesize)
+                    what: (if not $resource {(
                         $pids
                         | par-each {|pid|
                             {
@@ -366,8 +348,7 @@ export def session_info [
                                 )
                             }
                         }
-                    )
-                    # what: $what.command?
+                    )})
                 }
             }
             _ => { { } }
@@ -380,23 +361,23 @@ export def session_info [
 @example "Get uptime" {ww | get uptime} --result 29sec
 export def ww [
     --long (-l) # long version
-]: nothing -> record<boot: string, uptime: duration, load: table, sessions: table> {
+    --resource (-r) # Resources only
+]: nothing -> record<boot: string uptime: duration load: table sessions: table> {
     let cpus = sys cpu | get load_average | uniq
     let tfs: record = sys host
     # Need to do this because nu has no native session info support
     let session_l: list = if (which loginctl | is-not-empty) {
-        if $long {
+        if $long or $resource {
             let ticksize: int = getconf CLK_TCK | default -e 100 | into int
             let now = (date now)
             loginctl list-sessions --json=short | from json
-            | par-each {|session|
-                session_info $session
+            | par-each -k {|session|
+                session_info $session --resource=$resource
             }
             | sort-by login
         } else {
             loginctl list-sessions --json=short | from json
         }
-
     } else {
         w | detect columns --skip 1
     }
