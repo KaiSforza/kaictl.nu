@@ -336,8 +336,7 @@ export def session_info [
                     ).starttime
                     cpu: (($x | cgroup cpu | get usage_usec) / $total_cpu.usage_usec)
                     mem: ($x | path join memory.current | open | into filesize)
-                    what: (if not $resource {(
-                        $pids
+                    what: (if not $resource {$pids} else {$pids.0?}
                         | par-each {|pid|
                             {
                                 pid: $pid
@@ -348,7 +347,7 @@ export def session_info [
                                 )
                             }
                         }
-                    )})
+                    )
                 }
             }
             _ => { { } }
