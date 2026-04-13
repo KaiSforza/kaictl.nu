@@ -88,7 +88,7 @@ def oppath [ ]: nothing -> path {
     }
 }
 
-alias "op signin" = signin
+alias "opbin signin" = signin
 
 # Signs into 1Password
 #
