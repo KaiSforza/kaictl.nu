@@ -349,16 +349,65 @@ export def "nix daemon restart" [
     }
 }
 
+# Show the nix config as a record
+#
+# Just a convenience function to get nice output from nix config
+export def --wrapped "nix conf" [
+    --diff (-d) # Only show the diff from the default
+    --extra-diff (-D) # Show the differences when extra options are specified
+    ...opts # Extra options to pass to `nix config show`
+]: nothing -> record {
+    let conf = ^nix config show ...$opts --json
+    | from json
+
+    if $extra_diff {
+        let pre_conf = ^nix config show --json | from json
+        $conf
+        | items {|k, v|
+            if ($pre_conf | get -o $k).value? != $v.value {
+                {k: $k v: $v}
+            }
+        }
+        | compact
+        | transpose -rd
+    } else if $diff {
+        $conf
+        | items {|k, v|
+            if $v.defaultValue != $v.value {
+                {k: $k v: $v}
+            }
+        }
+        | compact
+        | transpose -rd
+    } else {
+        $conf
+    }
+}
+
 def nu_complete_nhcommands [] {
     [build boot test switch]
 }
 
 export def "nix nh" [
     --no-use-ssh (-S) # Don't use ssh, use nix/nh remoting
+    --builders (-b): list<string>@"nix builders" = [] # Which builder to use
+    --nix-opts (-O): list<string> # Extra nix options as an array
     command: string@nu_complete_nhcommands # What to do in `nh`
     ...nodes: string
 ]: nothing -> record {
     log info "Building and sending derivations"
+    if ($builders | is-not-empty) {
+        log info $"Using custom builders:"
+        $builders | each {|b| log info $"  ($b)"}
+    }
+    let conf_diff = ^nix conf -E ...$nix_opts
+    if ($conf_diff | is-not-empty) {
+        log info $"Options set on the CLI:"
+        $conf_diff
+        | items {|k, v|
+            log info $"  ($k) = ($v.value)"
+        }
+    }
     let flake: string = $env.NH_OS_FLAKE?
     | default $env.NH_FLAKE?
     | default "/etc/nixos"
@@ -373,6 +422,8 @@ export def "nix nh" [
     let output =  (
         run-external $nom ...[
             build
+            ...$nix_opts
+            --builders ($builders | str join ';')
             --print-out-paths
             --no-link
             ...(
@@ -420,6 +471,8 @@ export def "nix nh" [
             os $dry_cmd
             --dry
             $"($d.output)"
+            --
+            ...$nix_opts
         ] | complete
 
         if $command != build {
@@ -430,6 +483,8 @@ export def "nix nh" [
                     [--elevation-strategy passwordless]
                 })
                 $"($d.output)"
+                --
+                ...$nix_opts
             ]
         }
         let out = {
