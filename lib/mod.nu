@@ -111,7 +111,7 @@ export def else_nix [
     nixpkg: string 
 ]: string -> path {
     let cmd = $in
-    match (which -a $cmd | where type == external) {
+    match (which -a $cmd | where type == external and path =~ $'($cmd)$' ) {
         [] => {
             log debug $"Using nix package from ($nixpkg)"
             let out = nix build --no-link --print-out-paths $nixpkg
