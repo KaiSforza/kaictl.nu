@@ -400,7 +400,7 @@ export def "nix nh" [
         log info $"Using custom builders:"
         $builders | each {|b| log info $"  ($b)"}
     }
-    let conf_diff = ^nix conf -E ...$nix_opts
+    let conf_diff = nix conf -D ...$nix_opts
     if ($conf_diff | is-not-empty) {
         log info $"Options set on the CLI:"
         $conf_diff
