@@ -523,7 +523,7 @@ export def "sys batt" [
             if $b.power_now >= 0 {
                 ($b.energy_limited - $b.energy_now) / $b.power_now
             } else {
-                ($b.energy_limited * -1) / $b.power_now 
+                ($b.energy_now * -1) / $b.power_now 
             }
             | $in * 60
             | into int # Round to the nearest minute
