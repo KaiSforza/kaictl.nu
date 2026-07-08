@@ -448,3 +448,102 @@ export def "path in-parent" [
     }
     return []
 }
+
+def pp [...p]: nothing -> path {
+    $p | path join
+}
+
+# Show battery info
+#
+# By default a few fields are shown:
+#   - name: Which battery is being shown
+#   - status: What the current battery status is ((dis/charging, full, ...)
+#   - capacity: Battery percentage (100 = full)
+#   - power_now: Current power change (in watts)
+#   - voltage_now: Current battery voltage (in volts)
+#   - energy_now: Current energy (in watt hours)
+#   - energy_limited: Energy max limited by tlp (in watt hours)
+#   - energy_full: Max energy currently, not designed (in watt hours)
+#   - health: Current energy_full / energy_full_design
+#   - time: How long to full or empty, depending on status (duration)
+@example "Show current battery info" {sys batt}
+@example "Get time remaining for the main battery" {sys batt | get 0.time}
+export def "sys batt" [
+    --full (-f) # Show full stats, not just the quick and easy ones
+]: nothing -> table {
+    let default = {
+        power_now: 0
+        status: Unknown
+        energy_now: 1
+        energy_full: 1
+        energy_full_design: 1
+    }
+    let batteries = glob /sys/class/power_supply/BAT*
+    $batteries
+    | each {|bat|
+        let tlp_info = ^tlp-stat --config
+        | lines
+        | where $it =~ $'THRESH_($bat | path basename)'
+        | parse '{_}: {key}_CHARGE_THRESH_{_}="{val}"'
+        | each {|v| {key: $v.key val: ($v.val | into int)}}
+        | transpose -rd
+        let data = $default
+        | merge (open (pp $bat uevent)
+            | lines
+            | split column '='
+            | rename key val
+            | str replace 'POWER_SUPPLY_' '' key
+            | str downcase key
+            | each {|v|
+                let val_ = $v.val | detect type
+                let val = match ($val_ | describe) {
+                    "int" => {
+                        if $val_ > 100_000 {
+                            $val_ / 1_000_000
+                        } else {
+                            $val_
+                        }
+                    }
+                    _ => $val_
+                }
+                {key: $v.key val: $val}
+            }
+            | transpose -rd
+        )
+        | upsert energy_limited {|b| $b.energy_full_design * (($tlp_info.STOP? | default 100) / 100)}
+        | upsert power_now {|b|
+            match $b.status {
+                "Discharging" => {$b.power_now * -1}
+                _ => $b.power_now
+            }
+        }
+        | upsert capacity {|b| $b.energy_now / $b.energy_full * 100}
+        | upsert health {|b| $b.energy_full / $b.energy_full_design * 100}
+        | upsert time {|b|
+            if $b.power_now >= 0 {
+                ($b.energy_limited - $b.energy_now) / $b.power_now
+            } else {
+                ($b.energy_limited * -1) / $b.power_now 
+            }
+            | $in * 60
+            | into int # Round to the nearest minute
+            | into duration --unit min
+        }
+        if $full {
+            $data
+        } else {
+            $data | select -o ...[
+                name
+                status
+                capacity
+                power_now
+                voltage_now
+                energy_now
+                energy_limited
+                energy_full
+                health
+                time
+            ]
+        }
+    }
+}
