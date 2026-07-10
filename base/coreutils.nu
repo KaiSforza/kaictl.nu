@@ -520,7 +520,9 @@ export def "sys batt" [
         | upsert capacity {|b| $b.energy_now / $b.energy_full * 100}
         | upsert health {|b| $b.energy_full / $b.energy_full_design * 100}
         | upsert time {|b|
-            if $b.power_now >= 0 {
+            if $b.power_now == 0 {
+                0
+            } else if $b.power_now > 0 {
                 ($b.energy_limited - $b.energy_now) / $b.power_now
             } else {
                 ($b.energy_now * -1) / $b.power_now 
