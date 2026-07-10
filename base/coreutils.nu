@@ -462,7 +462,6 @@ def pp [...p]: nothing -> path {
 #   - power_now: Current power change (in watts)
 #   - voltage_now: Current battery voltage (in volts)
 #   - energy_now: Current energy (in watt hours)
-#   - energy_limited: Energy max limited by tlp (in watt hours)
 #   - energy_full: Max energy currently, not designed (in watt hours)
 #   - health: Current energy_full / energy_full_design
 #   - time: How long to full or empty, depending on status (duration)
@@ -481,12 +480,6 @@ export def "sys batt" [
     let batteries = glob /sys/class/power_supply/BAT*
     $batteries
     | each {|bat|
-        let tlp_info = ^tlp-stat --config
-        | lines
-        | where $it =~ $'THRESH_($bat | path basename)'
-        | parse '{_}: {key}_CHARGE_THRESH_{_}="{val}"'
-        | each {|v| {key: $v.key val: ($v.val | into int)}}
-        | transpose -rd
         let data = $default
         | merge (open (pp $bat uevent)
             | lines
@@ -510,7 +503,6 @@ export def "sys batt" [
             }
             | transpose -rd
         )
-        | upsert energy_limited {|b| $b.energy_full_design * (($tlp_info.STOP? | default 100) / 100)}
         | upsert power_now {|b|
             match $b.status {
                 "Discharging" => {$b.power_now * -1}
@@ -523,7 +515,7 @@ export def "sys batt" [
             if $b.power_now == 0 {
                 0
             } else if $b.power_now > 0 {
-                ($b.energy_limited - $b.energy_now) / $b.power_now
+                ($b.energy_full - $b.energy_now) / $b.power_now
             } else {
                 ($b.energy_now * -1) / $b.power_now 
             }
@@ -541,7 +533,6 @@ export def "sys batt" [
                 power_now
                 voltage_now
                 energy_now
-                energy_limited
                 energy_full
                 health
                 time
