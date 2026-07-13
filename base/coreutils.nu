@@ -482,8 +482,7 @@ export def "sys batt" [
     | each {|bat|
         let data = $default
         | merge (open (pp $bat uevent)
-            | lines
-            | split column '='
+            | from csv --separator '=' --noheaders
             | rename key val
             | str replace 'POWER_SUPPLY_' '' key
             | str downcase key
