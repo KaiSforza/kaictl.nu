@@ -356,9 +356,9 @@ export def session_info [
 }
 
 # A better output for `w`
-@example "Get load average and other info" {ww}
-@example "Get uptime" {ww | get uptime} --result 29sec
-export def ww [
+@example "Get load average and other info" {sys w}
+@example "Get uptime" {sys w | get uptime} --result 29sec
+export def "sys w" [
     --long (-l) # long version
     --resource (-r) # Resources only
 ]: nothing -> record<boot: string uptime: duration load: table sessions: table> {
@@ -388,6 +388,8 @@ export def ww [
         sessions: $session_l
     }
 }
+
+export alias ww = sys w
 
 # Get just the path to the which file
 #
