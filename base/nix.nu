@@ -362,23 +362,29 @@ export def --wrapped "nix conf" [
 
     if $extra_diff {
         let pre_conf = ^nix config show --json | from json
-        $conf
+        let info: table = $conf
         | items {|k, v|
             if ($pre_conf | get -o $k).value? != $v.value {
                 {k: $k v: $v}
             }
         }
         | compact
-        | transpose -rd
+        match $info {
+            [] => {{}}
+            $x => {$x | transpose -rd}
+        }
     } else if $diff {
-        $conf
+        let info: table = $conf
         | items {|k, v|
             if $v.defaultValue != $v.value {
                 {k: $k v: $v}
             }
         }
         | compact
-        | transpose -rd
+        match $info {
+            [] => {{}}
+            $x => {$x | transpose -rd}
+        }
     } else {
         $conf
     }
