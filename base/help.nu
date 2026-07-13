@@ -35,8 +35,8 @@ def details [
 
 def compten [] {compact | flatten}
 
-def "sections join" []: list<oneof<list<any>, nothing, string>> -> string {
-    let input: list<list<any>> = $in
+def "sections join" []: list<list<any>> -> string {
+    let input = $in
     let interspersed: list<list<any>> = $input
     | skip
     | compact
@@ -169,7 +169,7 @@ def "nu-complete list-externs" [] {
 def build-help-header [
     text: string
     --newline (-n)
-] {
+]: nothing -> string {
     let header = $"(ansi green)($text)(ansi reset):"
 
     if not $newline {
@@ -182,7 +182,7 @@ def build-help-header [
 # Highlight (and italicize) code in backticks, fallback to dimmed for invalid syntax
 def "nu-highlight desc" [
     --fallback: string = (ansi d)
-] {
+]: string -> string {
     if (config use-colors) {
         str replace -ar '(?<!`)`([^`]+)`(?!`)' {|s|
             $s
@@ -208,22 +208,24 @@ def "format cmd" [] {
 }
 
 
-def build-module-page [module: record] {
-    let name = [
+def build-module-page [module: record]: nothing -> string {
+    let name: list<string> = [
         $"(build-help-header "Module") ($module.name)"
     ]
 
-    let description = if ($module.description? | is-not-empty) {[
-        ($module.description | nu-highlight desc)
-    ]}
+    let description: list<string> = if ($module.description? | is-not-empty) {
+        [
+            ($module.description | nu-highlight desc)
+        ]
+    } else {[]}
 
-    let extra_description = if ($module.extra_description? | is-not-empty) {
+    let extra_description: list<string> = if ($module.extra_description? | is-not-empty) {
         [
             ($module.extra_description | nu-highlight desc)
         ]
-    }
+    } else {[]}
 
-    let submodules = if ($module.submodules? | is-not-empty) {[
+    let submodules: list<string> = if ($module.submodules? | is-not-empty) {[
         (build-help-header "Submodules")
         $"(
             $module.submodules
@@ -237,12 +239,12 @@ def build-module-page [module: record] {
             | details
             # | str join (char newline)
         )"
-    ]}
+    ]} else {[]}
 
-    let allcmds = scope commands
-    let cmdinfo = $allcmds | where name in $module.commands.name
+    let allcmds: table = scope commands
+    let cmdinfo: table = $allcmds | where name in $module.commands.name
 
-    let commands = if ($module.commands? | is-not-empty) {[
+    let commands: list<string> = if ($module.commands? | is-not-empty) {[
         (build-help-header "Exported commands")
         $"(
             $module.commands | each {|command|
@@ -256,10 +258,10 @@ def build-module-page [module: record] {
             }
             | details
         )"
-    ]}
+    ]} else {[]}
 
     let allaliases: table = scope aliases
-    let aliases: table = if ($module.aliases? | is-not-empty) {[
+    let aliases: list<string> = if ($module.aliases? | is-not-empty) {[
         (build-help-header "Exported aliases")
         $"($module.aliases | each {|alias|
             let a = $allaliases
@@ -271,10 +273,10 @@ def build-module-page [module: record] {
                 d: $a.description
             }
         } | details)"
-    ]}
+    ]} else {[]}
 
     # Always show the env block
-    let env_block = [
+    let env_block: list<string> = [
         (if not $module.has_env_block {
             $"This module (ansi cyan)does not export(ansi reset) environment."
         } else {
@@ -318,7 +320,7 @@ export def modules [
 
 def build-alias-page [alias: record opts: record]: nothing -> string {
     let ad = $alias.description? | default ""
-    let description = if (
+    let description: list<string> = if (
         $ad | is-not-empty
     ) or not (
         $ad != $"Alias for `($alias.expansion)`"
@@ -326,12 +328,12 @@ def build-alias-page [alias: record opts: record]: nothing -> string {
         ($alias.description | nu-highlight desc)
     ]}
 
-    let aname = [
+    let aname: list<string> = [
         (build-help-header "Alias")
         $"($indent)($alias.name)"
     ]
 
-    let expansion = [
+    let expansion: list<string> = [
         (build-help-header "Expansion")
         (
             $alias.expansion
@@ -443,7 +445,7 @@ export def operators [
     }
 }
 
-def get-extension-by-prefix [prefix: string] {
+def get-extension-by-prefix [prefix: string]: nothing -> table {
     scope commands
     | where name starts-with $prefix
     | insert extension { get name | parse $"($prefix){ext}" | get ext.0 | $"*.($in)" }
@@ -451,7 +453,7 @@ def get-extension-by-prefix [prefix: string] {
     | rename --column { name: command }
 }
 
-def get-command-extensions [command: string] {
+def get-command-extensions [command: string]: nothing -> list<string> {
     let extensions = {
         "open": {||
             [
@@ -472,7 +474,10 @@ def get-command-extensions [command: string] {
         $extensions
         | get $command
         | do $in
-        | each { lines | each { $"($indent)($in)" } | str join (char newline) }
+        | str join (char newline)
+        | lines
+        | each { $"($indent)($in)" }
+        | str join (char newline)
         | nu-highlight desc
     } else {
         []
@@ -480,22 +485,25 @@ def get-command-extensions [command: string] {
 }
 
 def build-command-page [command: record opts: record = {}]: nothing -> any {
-    let description = if ($command.description? | is-not-empty) {[
-        ($command.description | nu-highlight desc)
-    ]}
-    let extra_description = if ($command.extra_description? | is-not-empty) {
+    let description: list<string> = if ($command.description? | is-not-empty) {
+        [
+            ($command.description | nu-highlight desc)
+        ]
+    } else {[]}
+    let extra_description: list<string> = if ($command.extra_description? | is-not-empty) {
         [
             ($command.extra_description | nu-highlight desc)
         ]
-    }
+    } else {[]}
+    let search_terms: list<string> = if ($command.search_terms? | is-not-empty) {
+        [
+            $"(build-help-header 'Search terms') ($command.search_terms)"
+        ]
+    } else {[]}
 
-    let search_terms = if ($command.search_terms? | is-not-empty) {[
-        $"(build-help-header 'Search terms') ($command.search_terms)"
-    ]}
-
-    let category = if ($command.category? | is-not-empty) {[
+    let category: list<string> = if ($command.category? | is-not-empty) {[
         $"(build-help-header 'Category') ($command.category)"
-    ]}
+    ]} else {[]}
 
     let signatures = ($command.signatures | transpose | get column1)
 
@@ -506,7 +514,7 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
     let optionals = $positionals | where is_optional == true
     let flags = $parameters | where parameter_type != positional and parameter_type != rest
 
-    let cli_usage = if ($signatures | is-not-empty) {
+    let cli_usage: list<string> = if ($signatures | is-not-empty) {
         [
             (build-help-header "Usage")
             ([
@@ -525,13 +533,13 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
             | str join ""
             | nu-highlight desc --fallback (ansi c))
         ]
-    }
+    } else {[]}
 
-    let subcommands = (
+    let subcommands: table = (
         scope commands
         | where name =~ $"^($command.name) "
     )
-    let subcommands = if ($subcommands | is-not-empty) {[
+    let subcommands: list<string> = if ($subcommands | is-not-empty) {[
         (build-help-header "Subcommands")
         ($subcommands
             | upsert description {|c|
@@ -549,129 +557,135 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
         # ($subcommands | each {|subcommand |
         #     $"($indent)(ansi teal)($subcommand.name)(ansi reset) - ($subcommand.description)"
         # } | str join (char newline))
-    ]}
+    ]} else {[]}
+ 
+    let rest: list<string> = [(
+        if ($signatures | is-not-empty) {
+            let flags =  $parameters
+            | where parameter_type != positional and parameter_type != rest
+            | if "help" not-in $in.parameter_name or "h" not-in $in.short_flag {
+                $in ++ [{
+                    parameter_name: "help"
+                    short_flag: (if "h" not-in $in.short_flag {"h"})
+                    syntax_shape: null
+                    description: "Display the help message for this command"
+                    parameter_default: null
+                }]
+            } else {""}
 
-    let rest = (if ($signatures | is-not-empty) {
-        let flags =  $parameters
-        | where parameter_type != positional and parameter_type != rest
-        | if "help" not-in $in.parameter_name or "h" not-in $in.short_flag {
-            $in ++ [{
-                parameter_name: "help"
-                short_flag: (if "h" not-in $in.short_flag {"h"})
-                syntax_shape: null
-                description: "Display the help message for this command"
-                parameter_default: null
-            }]
-        }
-
-        let cmd_flags = if ($flags | is-not-empty) {[
-            (build-help-header "Flags")
-            ($flags | each {|flag|
-                {
-                    f: ([
-                        (if ($flag.parameter_name | is-not-empty) {
-                            $"--(ansi teal)($flag.parameter_name)(ansi reset)"
-                        }),
-                        ...(
-                            if ($flag.short_flag | is-not-empty) {
-                            [
-                                ","
-                                (if (($flag.parameter_name | str length) > 10) {
-                                    $"(char newline)($indent)"
-                                } else {" "})
-                                $"-(ansi teal)($flag.short_flag)(ansi reset)"
-                            ]
-                            }
-                        )
-                        ...(if ($flag.syntax_shape | is-not-empty) {
-                            [
+            let cmd_flags: list<string> = if ($flags | is-not-empty) {[
+                (build-help-header "Flags")
+                ($flags | each {|flag|
+                    {
+                        f: ([
+                            (if ($flag.parameter_name | is-not-empty) {
+                                $"--(ansi teal)($flag.parameter_name)(ansi reset)"
+                            }),
+                            ...(
+                                if ($flag.short_flag | is-not-empty) {
+                                [
+                                    ","
+                                    (if (($flag.parameter_name | str length) > 10) {
+                                        $"(char newline)($indent)"
+                                    } else {" "})
+                                    $"-(ansi teal)($flag.short_flag)(ansi reset)"
+                                ]
+                                }
+                            )
+                            ...(if ($flag.syntax_shape | is-not-empty) {
+                                [
                                 
-                                (if (($flag.syntax_shape | str length) > 12) {
-                                    $"(char newline)($indent)"
-                                } else {" "})
-                                $"($flag.syntax_shape | format type)"
-                            ]
-                        }),
-                    ] | compact | flatten | str join '')
-                    d: ([(if ($flag.description | is-not-empty) {
-                            let desc = $flag.description | nu-highlight desc
-                            $"($desc)"
-                        }),
-                        (if ($flag.parameter_default | is-not-empty) {
-                            $"\n\(default: ($flag.parameter_default
-                                | if ($in | describe -d).type == string { debug -v } else {})\)"
-                        })
-                    ] | str join "")
-                }
-            } | details)
-        ]}
+                                    (if (($flag.syntax_shape | str length) > 12) {
+                                        $"(char newline)($indent)"
+                                    } else {" "})
+                                    $"($flag.syntax_shape | format type)"
+                                ]
+                            }),
+                        ] | compact | flatten | str join '')
+                        d: ([(if ($flag.description | is-not-empty) {
+                                let desc = $flag.description | nu-highlight desc
+                                $"($desc)"
+                            }),
+                            (if ($flag.parameter_default | is-not-empty) {
+                                $"\n\(default: ($flag.parameter_default
+                                    | if ($in | describe -d).type == string { debug -v } else {})\)"
+                            })
+                        ] | str join "")
+                    }
+                } | details)
+            ]} else {
+                []
+            }
 
 
-        let type_signatures = if ($signatures | is-not-empty) {[
-            (build-help-header "Signatures")
-            ...($signatures | each {|signature|
-                let input = ($signature | where parameter_type == input | get 0)
-                let output = ($signature | where parameter_type == output | get 0)
+            let type_signatures: list<string> = if ($signatures | is-not-empty) {[
+                (build-help-header "Signatures")
+                ...($signatures | each {|signature|
+                    let input = ($signature | where parameter_type == input | get 0)
+                    let output = ($signature | where parameter_type == output | get 0)
+                    [
+                        $indent
+                        ...[(if $input.syntax_shape != nothing {
+                            $"($input.syntax_shape | format type) | "
+                        })]
+                        $"($'`($command.name)`' | nu-highlight desc --fallback (ansi cb))"
+                        $" -> ($output.syntax_shape | format type)"
+                    ] | str join ""
+                })
+            ]} else {[]}
+
+            let parameters: list<string> = if ($positionals | is-not-empty) or $is_rest {
                 [
-                    $indent
-                    ...[(if $input.syntax_shape != nothing {
-                        $"($input.syntax_shape | format type) | "
-                    })]
-                    $"($'`($command.name)`' | nu-highlight desc --fallback (ansi cb))"
-                    $" -> ($output.syntax_shape | format type)"
-                ] | str join ""
-            })
-        ]}
-
-        let parameters = if ($positionals | is-not-empty) or $is_rest {
+                    (build-help-header "Parameters")
+                    ...($positionals | each {|positional|
+                        [
+                            $indent
+                            $"(ansi teal)($positional.parameter_name)(ansi reset)",
+                            (if ($positional.syntax_shape | is-empty) { "" } else {
+                                $": ($positional.syntax_shape | format type)"
+                            }),
+                            (if ($positional.description | is-empty) { "" } else {
+                                $" ($positional.description)"
+                            }),
+                            (if ($positional.parameter_default | is-empty) { "" } else {
+                                $" \(optional, default: ($positional.parameter_default)\)"
+                            })
+                        ] | str join ""
+                    })
+                    (if $is_rest {
+                        let rest = ($parameters | where parameter_type == rest | get 0)
+                        [
+                            $indent
+                            $"...(ansi teal)rest(ansi reset): ($rest.syntax_shape | format type)"
+                            (if ($rest.description |is-not-empty) {$rest.description})
+                        ] | str join ""
+                    })
+                ]
+                | compact
+            } else {[]}
             [
-                (build-help-header "Parameters")
-                ...($positionals | each {|positional|
-                    [
-                        $indent
-                        $"(ansi teal)($positional.parameter_name)(ansi reset)",
-                        (if ($positional.syntax_shape | is-empty) { "" } else {
-                            $": ($positional.syntax_shape | format type)"
-                        }),
-                        (if ($positional.description | is-empty) { "" } else {
-                            $" ($positional.description)"
-                        }),
-                        (if ($positional.parameter_default | is-empty) { "" } else {
-                            $" \(optional, default: ($positional.parameter_default)\)"
-                        })
-                    ] | str join ""
-                })
-                (if $is_rest {
-                    let rest = ($parameters | where parameter_type == rest | get 0)
-                    [
-                        $indent
-                        $"...(ansi teal)rest(ansi reset): ($rest.syntax_shape | format type)"
-                        (if ($rest.description |is-not-empty) {$rest.description})
-                    ] | str join ""
-                })
+                $cmd_flags
+                $type_signatures
+                $parameters
             ]
-            | compact
+            | sections join
         }
-        [
-            $cmd_flags
-            $type_signatures
-            $parameters
-        ]
-        | sections join
-    })
+    )]
 
     # This section documents how the command can be extended
     # E.g. `open` can be extended by adding more `from ...` commands
-    let extensions = (
-        get-command-extensions $command.name
-        | if ($in | is-not-empty) {
-            prepend [
-              (build-help-header "Extensions")
+    let extensions: list<string> = match (get-command-extensions $command.name) {
+        [] => {[]}
+        $x => {
+            (log info $"($x | describe)")
+            [
+                (build-help-header "Extensions")
+                $x
             ]
         }
-    )
+    }
 
-    let examples = if ($command.examples | is-not-empty) {[
+    let examples: list<string> = if ($command.examples | is-not-empty) {[
         (build-help-header "Examples")
         ($command.examples | each {|example| [
             $"($indent)(ansi d)# ($example.description)(ansi rst)"
@@ -689,7 +703,7 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
                 | str join (char newline)
             })]
         ] | compact | str join (char newline)})
-    ] | flatten}
+    ] | flatten} else {[]}
 
     match $opts {
         {short: true} => [$description],

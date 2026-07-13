@@ -487,7 +487,7 @@ export def "sys batt" [
             | from csv --separator '=' --noheaders
             | rename key val
             | str replace 'POWER_SUPPLY_' '' key
-            | str downcase key
+            | str lowercase key
             | each {|v|
                 let val_ = $v.val | detect type
                 let val = match ($val_ | describe) {
