@@ -18,7 +18,7 @@ export def l [
     --threads (-t) # Use multiple threads
     ...pattern: oneof<glob, string> # The glob pattern to use
 ] {
-    let r: oneof<glob, string> = if ($pattern | is-empty) {
+    let r: list<oneof<glob, string>> = if ($pattern | is-empty) {
         [.]
     } else {
         $pattern
