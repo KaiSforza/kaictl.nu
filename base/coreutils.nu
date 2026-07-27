@@ -90,7 +90,10 @@ def nu_complete_mounts [] {
 export def "sys df" [
     --precision (-p): int = 2 # Default precision to use for the filesizes
     ...path: string@nu_complete_mounts #Show a specific mount only
-]: nothing -> table {
+]: [
+    nothing -> table
+    nothing -> record
+] {
     let pathfilter = if ($path | is-not-empty) {
         {|p| $p.mount in $path}
     } else {
