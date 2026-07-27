@@ -456,6 +456,7 @@ export def "nix nh" [
             log info $"Sending built derivation to '($d.node)'..."
             (
                 nix copy
+                --substitute-on-destination
                 --to $"ssh://($d.node)"
                 $d.output
             )

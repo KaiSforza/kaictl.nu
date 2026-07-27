@@ -78,7 +78,7 @@ export def retry [
     }
 }
 
-def nu_complete_mounts [] {
+def nu_complete_mounts []: nothing -> list {
     sys df | get mount
 }
 
@@ -90,10 +90,7 @@ def nu_complete_mounts [] {
 export def "sys df" [
     --precision (-p): int = 2 # Default precision to use for the filesizes
     ...path: string@nu_complete_mounts #Show a specific mount only
-]: [
-    nothing -> table
-    nothing -> record
-] {
+]: nothing -> oneof<table, record> {
     let pathfilter = if ($path | is-not-empty) {
         {|p| $p.mount in $path}
     } else {
@@ -135,7 +132,7 @@ export def "sys df" [
 # sys net but sorted
 export def "sys n" [
     iface: string@nu_complete_ifaces = '' # Get a specific interface only
-]: nothing -> table {
+]: nothing -> oneof<table, record> {
     let sn = sys net
     | sort-by name
     | upsert ip {|i|
