@@ -2,14 +2,17 @@
 
 # Default indent to use, set to 2 for compactness
 const indent = "  "
-# Default prompt ($env.PROMPT_INDICATOR_* are not constants)
-const prompt = $"(ansi g)> (ansi rst)"
 
-def linewrap [
-    length: int
-] {
-    [$in] | table --index=false
+# Some ansi stuff to make strings shorter
+const ansi = {
+    di: (ansi default_italic)
+    r: (ansi reset)
 }
+
+# Default prompt ($env.PROMPT_INDICATOR_* are not constants)
+const prompt = $"(ansi g)> ($ansi.r)"
+
+alias help = main
 
 # Returns a string that's an 80 char wide table for things like subcommands
 #
@@ -36,7 +39,7 @@ def details [
 def compten [] {compact | flatten}
 
 def "sections join" []: list<list<any>> -> string {
-    let input = $in
+    let input = $in | compact -e
     let interspersed: list<list<any>> = $input
     | skip
     | compact
@@ -50,7 +53,7 @@ def "sections join" []: list<list<any>> -> string {
 }
 
 def error-fmt [] {
-    $"(ansi red)($in)(ansi reset)"
+    $"(ansi red)($in)($ansi.r)"
 }
 
 def throw-error [error: string, msg: string, span: record] {
@@ -92,23 +95,46 @@ def get-all-operators [] {
         [Assignment, -=, SubtractAssign, 'Subtracts a value from a variable.', 10]
         [Assignment, *=, MultiplyAssign, 'Multiplies a variable by a value.', 10]
         [Assignment, /=, DivideAssign, 'Divides a variable by a value.', 10]
-        [Assignment, ++=, ConcatenateAssign, 'Concatenates a list, a string, or a binary value to a variable of the same type.', 10]
+        [Assignment, ++=, ConcatenateAssign,
+            'Concatenate a list, string, or binary value to a variable of the same type.',
+            10
+        ]
         [Comparison, ==, Equal, 'Checks if two values are equal.', 80]
         [Comparison, !=, NotEqual, 'Checks if two values are not equal.', 80]
         [Comparison, <, LessThan, 'Checks if a value is less than another.', 80]
         [Comparison, >, GreaterThan, 'Checks if a value is greater than another.', 80]
-        [Comparison, <=, LessThanOrEqual, 'Checks if a value is less than or equal to another.', 80]
-        [Comparison, >=, GreaterThanOrEqual, 'Checks if a value is greater than or equal to another.', 80]
-        [Comparison, '=~ or like', RegexMatch, 'Checks if a value matches a regular expression.', 80]
-        [Comparison, '!~ or not-like', NotRegexMatch, 'Checks if a value does not match a regular expression.', 80]
-        [Comparison, in, In, 'Checks if a value is in a list, is part of a string, or is a key in a record.', 80]
-        [Comparison, not-in, NotIn, 'Checks if a value is not in a list, is not part of a string, or is not a key in a record.', 80]
-        [Comparison, has, Has, 'Checks if a list contains a value, a string contains another, or if a record has a key.', 80]
-        [Comparison, not-has, NotHas, 'Checks if a list does not contains a value, a string does not contains another, or if a record does not have a key.', 80]
-        [Comparison, starts-with, StartsWith, 'Checks if a string starts with another.', 80]
-        [Comparison, not-starts-with, NotStartsWith, 'Checks if a string does not start with another.', 80]
-        [Comparison, ends-with, EndsWith, 'Checks if a string ends with another.', 80]
-        [Comparison, not-ends-with, NotEndsWith, 'Checks if a string does not end with another.', 80]
+        [Comparison, <=, LessThanOrEqual,
+            'Checks if a value is less than or equal to another.', 80]
+        [Comparison, >=, GreaterThanOrEqual,
+            'Checks if a value is greater than or equal to another.', 80]
+        [Comparison, '=~ or like', RegexMatch,
+            'Checks if a value matches a regular expression.', 80]
+        [Comparison, '!~ or not-like', NotRegexMatch,
+            'Checks if a value does not match a regular expression.', 80]
+        [Comparison, in, In,
+            'Checks if a value is in a list, part of a string, or a key in a record.',
+            80
+        ]
+        [Comparison, not-in, NotIn,
+            'Checks if a value is not in a list, part of a string, or a key in a record.',
+            80
+        ]
+        [Comparison, has, Has,
+            'Checks if a list contains a value, string contains another, or record has a key.',
+            80
+        ]
+        [Comparison, not-has, NotHas,
+            'Checks if a list does not contains a value, string does not contains another, or record does not have a key.',
+            80
+        ]
+        [Comparison, starts-with, StartsWith,
+            'Checks if a string starts with another.', 80]
+        [Comparison, not-starts-with, NotStartsWith,
+            'Checks if a string does not start with another.', 80]
+        [Comparison, ends-with, EndsWith,
+            'Checks if a string ends with another.', 80]
+        [Comparison, not-ends-with, NotEndsWith,
+            'Checks if a string does not end with another.', 80]
         [Math, +, Add, 'Adds two values.', 90]
         [Math, -, Subtract, 'Subtracts two values.', 90]
         [Math, *, Multiply, 'Multiplies two values.', 95]
@@ -116,7 +142,8 @@ def get-all-operators [] {
         [Math, //, FloorDivide, 'Divides two values and floors the result.', 95]
         [Math, mod, Modulo, 'Divides two values and returns the remainder.', 95]
         [Math, **, Pow, 'Raises one value to the power of another.', 100]
-        [Math, ++, Concatenate, 'Concatenates two lists, two strings, or two binary values.', 80]
+        [Math, ++, Concatenate,
+            'Concatenates two lists, two strings, or two binary values.', 80]
         [Bitwise, bit-or, BitOr, 'Performs a bitwise OR on two values.', 60]
         [Bitwise, bit-xor, BitXor, 'Performs a bitwise XOR on two values.', 70]
         [Bitwise, bit-and, BitAnd, 'Performs a bitwise AND on two values.', 75]
@@ -163,14 +190,17 @@ def "nu-complete main-help" [] {
 }
 
 def "nu-complete list-externs" [] {
-    scope commands | where type == "external" | select name description | rename value description
+    scope commands
+    | where type == "external"
+    | select name description
+    | rename value description
 }
 
 def build-help-header [
     text: string
     --newline (-n)
 ]: nothing -> string {
-    let header = $"(ansi green)($text)(ansi reset):"
+    let header = $"(ansi green)($text)($ansi.r):"
 
     if not $newline {
         $header
@@ -189,7 +219,7 @@ def "nu-highlight desc" [
             | try {
                 nu-highlight --reject-garbage
             } catch {
-                $"($fallback)($s)(ansi rst)"
+                $"($fallback)($s)($ansi.r)"
             }
             | $"(ansi i)($in)(ansi rst_i)"
         }
@@ -199,12 +229,12 @@ def "nu-highlight desc" [
 def "format type" []: string -> string {
     $in
     | str replace -ra "([^<]+)(<)" $"(ansi bo)$1(ansi rst_bo)$2"
-    | $"<(ansi b)($in)(ansi rst)>"
+    | $"<(ansi b)($in)($ansi.r)>"
 }
 
 def "format cmd" [] {
     let cmd = $in
-    $"(ansi default_dimmed)(ansi default_italic)($cmd)(ansi reset)"
+    $"(ansi default_dimmed)($ansi.di)($cmd)($ansi.r)"
 }
 
 
@@ -231,13 +261,11 @@ def build-module-page [module: record]: nothing -> string {
             $module.submodules
             | each {|submodule|
                 {
-                    m: $"(ansi cb)($submodule.name)(ansi rst)"
+                    m: $"(ansi cb)($submodule.name)($ansi.r)"
                     d: $submodule.description
                 }
-                # $'($indent)(ansi cb)($submodule.name)(ansi rst) (char lparen)($module.name) ($submodule.name)(char rparen) - ($submodule.description)'
             }
             | details
-            # | str join (char newline)
         )"
     ]} else {[]}
 
@@ -249,7 +277,7 @@ def build-module-page [module: record]: nothing -> string {
         $"(
             $module.commands | each {|command|
                 {
-                    n: $'(ansi cb)($command.name)(ansi rst)'
+                    n: $'(ansi cb)($command.name)($ansi.r)'
                     d: (
                         $allcmds
                         | where decl_id == $command.decl_id
@@ -269,7 +297,7 @@ def build-module-page [module: record]: nothing -> string {
             | get 0?
             | default {description: ""}
             {
-                n: $'(ansi cb)($alias.name)(ansi rst)'
+                n: $'(ansi cb)($alias.name)($ansi.r)'
                 d: $a.description
             }
         } | details)"
@@ -278,20 +306,29 @@ def build-module-page [module: record]: nothing -> string {
     # Always show the env block
     let env_block: list<string> = [
         (if not $module.has_env_block {
-            $"This module (ansi cyan)does not export(ansi reset) environment."
+            $"This module (ansi cyan)does not export($ansi.r) environment."
         } else {
-            $"This module (ansi cyan)exports(ansi reset) environment."
+            $"This module (ansi cyan)exports($ansi.r) environment."
         })
     ]
 
-    [$name $description $extra_description $submodules $commands $aliases $env_block] | sections join
+    [
+        $name
+        $description
+        $extra_description
+        $submodules
+        $commands
+        $aliases
+        $env_block
+    ]
+    | sections join
 }
 
 # Show help on nushell modules.
 #
 # When requesting help for a single module, its commands and aliases will be highlighted if they
-# are also available in the current scope. Commands/aliases that were imported under a different name
-# (such as with a prefix after `use some-module`) will be highlighted in parentheses.
+# are also available in the current scope. Commands/aliases that were imported under a different
+# name (such as with a prefix after `use some-module`) will be highlighted in parentheses.
 @example "show all aliases" {help modules}
 @example "search for string in module names" {help modules --find ba}
 @example "search help for single module" {help modules foo}
@@ -406,16 +443,16 @@ export def externs [
     }
 }
 
-def build-operator-page [operator: record] {
+def build-operator-page [o: record] {
     [
         (build-help-header "Description")
-        $"($indent)($operator.description)"
+        $"($indent)($o.description)"
         (build-help-header "Operator")
-        $"($indent)($operator.name) (char lparen)(ansi cyan_bold)($operator.operator)(ansi reset)(char rparen)"
+        $"($indent)($o.name) \((ansi cyan_bold)($o.operator)($ansi.r)\)"
         (build-help-header "Type")
-        $"($indent)($operator.type)"
+        $"($indent)($o.type)"
         (build-help-header "Precedence")
-        $"($indent)($operator.precedence)"
+        $"($indent)($o.precedence)"
     ] | str join (char newline)
 }
 
@@ -431,14 +468,12 @@ export def operators [
     let operators = (get-all-operators)
 
     if ($find | is-not-empty) {
-        $operators | find $find --columns [type name]
+        $operators | find $find --columns [type name operator description]
     } else if ($operator | is-not-empty) {
         let found_operator = ($operators | where name == ($operator | str join " "))
-
         if ($found_operator | is-empty) {
             operator-not-found-error (metadata $operator | get span)
         }
-
         build-operator-page ($found_operator | get 0)
     } else {
         $operators
@@ -507,12 +542,21 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
 
     let signatures = ($command.signatures | transpose | get column1)
 
-    let parameters = $signatures | get --optional 0 | default [] | where parameter_type != input and parameter_type != output
-    let is_rest = $parameters | where parameter_type == rest | is-not-empty
-    let positionals = $parameters | where parameter_type == positional and parameter_type != rest
-    let required = $positionals | where is_optional == false
-    let optionals = $positionals | where is_optional == true
-    let flags = $parameters | where parameter_type != positional and parameter_type != rest
+    let parameters = $signatures
+        | get --optional 0
+        | default []
+        | where parameter_type != input and parameter_type != output
+    let is_rest = $parameters
+        | where parameter_type == rest
+        | is-not-empty
+    let positionals = $parameters
+        | where parameter_type == positional and parameter_type != rest
+    let required = $positionals
+        | where is_optional == false
+    let optionals = $positionals
+        | where is_optional == true
+    let flags = $parameters
+        | where parameter_type != positional and parameter_type != rest
 
     let cli_usage: list<string> = if ($signatures | is-not-empty) {
         [
@@ -544,19 +588,16 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
         ($subcommands
             | upsert description {|c|
                 if ($c.type == custom) {
-                    $"(ansi g)\(($c.type)\)(ansi rst) ($c.description)"
+                    $"(ansi g)\(($c.type)\)($ansi.r) ($c.description)"
                 } else {
                     $c.description
                 }
             }
             | select name description
-            | upsert name {|sc| $"(ansi teal)($sc.name)(ansi rst)"}
+            | upsert name {|sc| $"(ansi teal)($sc.name)($ansi.r)"}
             | transpose -rd
             | details
         )
-        # ($subcommands | each {|subcommand |
-        #     $"($indent)(ansi teal)($subcommand.name)(ansi reset) - ($subcommand.description)"
-        # } | str join (char newline))
     ]} else {[]}
  
     let rest: list<string> = [(
@@ -579,7 +620,7 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
                     {
                         f: ([
                             (if ($flag.parameter_name | is-not-empty) {
-                                $"--(ansi teal)($flag.parameter_name)(ansi reset)"
+                                $"--(ansi teal)($flag.parameter_name)($ansi.r)"
                             }),
                             ...(
                                 if ($flag.short_flag | is-not-empty) {
@@ -588,7 +629,7 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
                                     (if (($flag.parameter_name | str length) > 10) {
                                         $"(char newline)($indent)"
                                     } else {" "})
-                                    $"-(ansi teal)($flag.short_flag)(ansi reset)"
+                                    $"-(ansi teal)($flag.short_flag)($ansi.r)"
                                 ]
                                 }
                             )
@@ -607,8 +648,12 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
                                 $"($desc)"
                             }),
                             (if ($flag.parameter_default | is-not-empty) {
-                                $"\n\(default: ($flag.parameter_default
-                                    | if ($in | describe -d).type == string { debug -v } else {})\)"
+                                $"\n\(default: (
+                                    $flag.parameter_default
+                                    | if ($in | describe -d).type == string {
+                                        debug -v
+                                    } else {}
+                                )\)"
                             })
                         ] | str join "")
                     }
@@ -616,7 +661,6 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
             ]} else {
                 []
             }
-
 
             let type_signatures: list<string> = if ($signatures | is-not-empty) {[
                 (build-help-header "Signatures")
@@ -640,7 +684,7 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
                     ...($positionals | each {|positional|
                         [
                             $indent
-                            $"(ansi teal)($positional.parameter_name)(ansi reset)",
+                            $"(ansi teal)($positional.parameter_name)($ansi.r)",
                             (if ($positional.syntax_shape | is-empty) { "" } else {
                                 $": ($positional.syntax_shape | format type)"
                             }),
@@ -656,13 +700,14 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
                         let rest = ($parameters | where parameter_type == rest | get 0)
                         [
                             $indent
-                            $"...(ansi teal)rest(ansi reset): ($rest.syntax_shape | format type)"
+                            $"...(ansi teal)rest($ansi.r): ($rest.syntax_shape | format type)"
                             (if ($rest.description |is-not-empty) {$rest.description})
                         ] | str join ""
                     })
                 ]
                 | compact
             } else {[]}
+
             [
                 $cmd_flags
                 $type_signatures
@@ -688,8 +733,10 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
     let examples: list<string> = if ($command.examples | is-not-empty) {[
         (build-help-header "Examples")
         ($command.examples | each {|example| [
-            $"($indent)(ansi d)# ($example.description)(ansi rst)"
-            $"($indent)($prompt)($example.example | if (config use-colors) { nu-highlight } else {})"
+            $"($indent)(ansi d)# ($example.description)($ansi.r)"
+            $"($indent)($prompt)($example.example
+                | if (config use-colors) { nu-highlight } else {}
+            )"
             ...[(if ($example.result | is-not-empty) {
                 $example.result
                 | table -e
@@ -725,27 +772,9 @@ def build-command-page [command: record opts: record = {}]: nothing -> any {
     }
     | compact
     | sections join
-    # [
-    #     $description
-    # ]
-    # | if $opts.short? != true {
-    #     $in ++ [
-    #         $extra_description
-    #         $search_terms
-    #         $category
-    #         $cli_usage
-    #         $subcommands
-    #         $rest
-    #         $extensions
-    #         $examples
-    #     ]
-    # } else {
-    #     $in
-    # }
-    # | sections join
 }
 
-# Show help on commands.
+# Show help on nushell commands.
 export def commands [
     ...command: string@"nu-complete list-commands" # the name of command to get help on
     --find (-f): string # string to find in command names and description
@@ -756,7 +785,9 @@ export def commands [
 
     if ($find | is-not-empty) {
         # TODO: impl find for external commands
-        $commands | find $find --columns [name description search_terms] | select name category description signatures search_terms
+        $commands
+        | find $find --columns [name description search_terms]
+        | select name category description signatures search_terms
     } else if ($command | is-not-empty) {
         let target_command = ($command | str join " ")
         let found_command = ($commands | where name == $target_command)
@@ -778,13 +809,13 @@ export def commands [
 def external-commands [
     ...command: string@"nu-complete list-commands",
 ] {
-    let target_command = $command | str join " " | str replace "^" ""
-    print -e $"(ansi default_italic)Help pages from external command ($target_command | format cmd):(ansi reset)"
+    let tgt = $command | str join " " | str replace "^" ""
+    print -e $"($ansi.di)Help pages from external command ($tgt | format cmd):($ansi.r)"
     if $env.NU_HELPER? == "--help" {
-        run-external ($target_command | split row " ") "--help"
+        run-external ($tgt | split row " ") "--help"
         | if $nu.os-info.name == "windows" { collect } else {}
     } else {
-        ^($env.NU_HELPER? | default "man") $target_command
+        ^($env.NU_HELPER? | default "man") $tgt
     }
 }
 
@@ -827,27 +858,39 @@ export def main [
         return
     }
 
+    let do_find = $find | is-not-empty
+
     let target_item = ($item | str join " ")
 
-    let commands = try { commands $target_item --find $find --short=$short --example=$example }
-    if ($commands | is-not-empty) { return $commands }
-
-    let aliases = try { aliases $target_item --find $find --short=$short --example=$example }
-    if ($aliases | is-not-empty) { return $aliases }
-
-    let modules = try { modules $target_item --find $find --short=$short --example=$example }
-    if ($modules | is-not-empty) { return $modules }
-
-    if ($find | is-not-empty) {
-        return []
-    } else {
-        (
-            throw-error
-            "Not found"
-            "did not find anything under this name"
-            (metadata $item).span
-        )
+    let commands = try {
+        commands $target_item --find $find --short=$short --example=$example
     }
+    if ($commands | is-not-empty) and not $do_find { return $commands }
 
+    let aliases = try {
+        aliases $target_item --find $find --short=$short --example=$example
+    }
+    if ($aliases | is-not-empty) and not $do_find { return $aliases }
+
+    let modules = try {
+        modules $target_item --find $find --short=$short --example=$example
+    }
+    if ($modules | is-not-empty) and not $do_find { return $modules }
+
+    if $do_find {
+        [
+            ...$commands
+            ...$aliases
+            ...$modules
+        ] | compact -e
+    } else {
+        error make {
+            msg: "did not find anything under this name"
+            label: {
+                text: "Not found"
+                span: (metadata $item).span
+            }
+        }
+    }
 }
 
