@@ -541,3 +541,7 @@ export def "sys batt" [
         }
     }
 }
+
+# def _uname [] -> {
+    
+# }

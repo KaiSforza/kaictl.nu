@@ -24,7 +24,9 @@ export def 'nix s regen' [
         | from json
         let flake_show = nix --option allow-import-from-derivation true flake show --json --legacy $flake
         | from json
-        let update_time = $flake_meta.lastModified
+        | get inventory
+        let update_time = $flake_meta.lastModified?
+        | default (date now | format date '%s')
         | into datetime --format "%s"
 
         if ($flake_show.packages? | is-not-empty) or ($flake_show.legacyPackages? | is-not-empty) {
